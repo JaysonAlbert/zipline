@@ -423,13 +423,13 @@ class WithTradingCalendars(object):
         A dictionary which maps asset type names to the calendar associated
         with that asset type.
     """
-    TRADING_CALENDAR_STRS = ('NYSE',)
-    TRADING_CALENDAR_FOR_ASSET_TYPE = {Equity: 'NYSE', Future: 'us_futures'}
+    TRADING_CALENDAR_STRS = ('SHSZ',)
+    TRADING_CALENDAR_FOR_ASSET_TYPE = {Equity: 'SHSZ', Future: 'us_futures'}
     TRADING_CALENDAR_FOR_EXCHANGE = {}
     # For backwards compatibility, exisitng tests and fixtures refer to
     # `trading_calendar` with the assumption that the value is the NYSE
     # calendar.
-    TRADING_CALENDAR_PRIMARY_CAL = 'NYSE'
+    TRADING_CALENDAR_PRIMARY_CAL = 'SHSZ'
 
     @classmethod
     def init_class_fixtures(cls):

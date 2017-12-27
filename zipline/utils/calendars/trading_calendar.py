@@ -158,7 +158,7 @@ class TradingCalendar(with_metaclass(ABCMeta)):
 
     @lazyval
     def _minutes_per_session(self):
-        diff = self.schedule.market_close - self.schedule.market_open
+        diff = self.schedule.market_close.subtract(self.schedule.market_open)
         diff = diff.astype('timedelta64[m]')
         return diff + 1
 

@@ -2031,7 +2031,7 @@ class DailyEquityHistoryTestCase(WithHistory, ZiplineTestCase):
 
         window_1 = self.data_portal.get_history_window(
             [self.ASSET1],
-            pd.Timestamp('2014-02-07', tz='UTC'),
+            pd.Timestamp('2014-02-13', tz='UTC'),
             4,
             "1d",
             "close",
@@ -2040,7 +2040,7 @@ class DailyEquityHistoryTestCase(WithHistory, ZiplineTestCase):
 
         window_2 = self.data_portal.get_history_window(
             [self.ASSET1],
-            pd.Timestamp('2014-02-05', tz='UTC'),
+            pd.Timestamp('2014-02-11', tz='UTC'),
             4,
             "1d",
             "close",
@@ -2049,7 +2049,7 @@ class DailyEquityHistoryTestCase(WithHistory, ZiplineTestCase):
 
         window_3 = self.data_portal.get_history_window(
             [self.ASSET1],
-            pd.Timestamp('2014-02-07', tz='UTC'),
+            pd.Timestamp('2014-02-13', tz='UTC'),
             4,
             "1d",
             "close",
@@ -2097,10 +2097,10 @@ class NoPrefetchDailyEquityHistoryTestCase(DailyEquityHistoryTestCase):
 
 
 class MinuteEquityHistoryFuturesCalendarTestCase(MinuteEquityHistoryTestCase):
-    TRADING_CALENDAR_STRS = ('NYSE', 'us_futures')
+    TRADING_CALENDAR_STRS = ('SHSZ', 'us_futures')
     TRADING_CALENDAR_PRIMARY_CAL = 'us_futures'
 
 
 class DailyEquityHistoryFuturesCalendarTestCase(DailyEquityHistoryTestCase):
-    TRADING_CALENDAR_STRS = ('NYSE', 'us_futures')
+    TRADING_CALENDAR_STRS = ('SHSZ', 'us_futures')
     TRADING_CALENDAR_PRIMARY_CAL = 'us_futures'
