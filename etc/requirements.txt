@@ -80,7 +80,7 @@ tables==3.3.0
 
 # for cn-zipline-live
 
-pytdx>=1.57
+pytdx>=1.55
 cn-treasury_curve>=0.6
 cn-stock-holidays>=1.1
 tdx-wrapper>=0.61

@@ -35,4 +35,4 @@ def test_target_ingest():
     yield ingest, 'tdx', None, False, None
 
 
-# ingest('tdx', None, True, pd.to_datetime('20170101', utc=True), False)
+ingest('tdx', None, True, pd.to_datetime('20170101', utc=True), False)
