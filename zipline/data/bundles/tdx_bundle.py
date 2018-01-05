@@ -1,4 +1,4 @@
-from tdx.engine import Engine
+from tdx.engine import Engine, AsyncEngine
 import pandas as pd
 from collections import OrderedDict
 import numpy as np
@@ -214,6 +214,9 @@ def tdx_bundle(assets,
     eg = Engine(auto_retry=True, multithread=True, best_ip=True, thread_num=1)
     eg.connect()
 
+    aeg = AsyncEngine(best_ip=True)
+    aeg.connect()
+
     symbols = fetch_symbols(eg, assets)
     metas = []
 
@@ -251,7 +254,7 @@ def tdx_bundle(assets,
 
         if freq == '1m':
             if distance >= 100:
-                func = eg.get_k_data
+                func = aeg.get_k_data
 
         for index, symbol in symbol_map.iteritems():
             try:
