@@ -219,6 +219,11 @@ def ipython_only(option):
     is_flag=True,
     help='Get list of available brokers'
 )
+@click.option(
+    '--reader',
+    default="rocksdb",
+    help='minute reader'
+)
 @click.pass_context
 def run(ctx,
         algofile,
@@ -237,7 +242,8 @@ def run(ctx,
         broker_uri,
         state_file,
         realtime_bar_target,
-        list_brokers):
+        list_brokers,
+        reader):
     """Run a backtest for the given algorithm.
     """
 
@@ -315,7 +321,8 @@ def run(ctx,
         environ=os.environ,
         broker=brokerobj,
         state_filename=state_file,
-        realtime_bar_target=realtime_bar_target
+        realtime_bar_target=realtime_bar_target,
+        reader = reader
     )
 
     if output == '-':
@@ -410,7 +417,12 @@ def zipline_magic(line, cell=None):
     default=True,
     help='Print progress information to the terminal.'
 )
-def ingest(bundle, assets, minute, start, fundamental, assets_version, show_progress):
+@click.option(
+    '--writer',
+    default="bcolz",
+    help='writer class name for bundle to write minute data'
+)
+def ingest(bundle, assets, minute, start, fundamental, assets_version, show_progress, writer):
     if bundle == 'tdx':
         if assets:
             if not os.path.exists(assets):
@@ -425,6 +437,7 @@ def ingest(bundle, assets, minute, start, fundamental, assets_version, show_prog
                           pd.Timestamp.utcnow(),
                           assets_version,
                           show_progress,
+                          writer=writer
                           )
 
 

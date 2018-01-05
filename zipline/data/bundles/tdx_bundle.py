@@ -167,6 +167,8 @@ def get_meta_from_bars(df):
 
 
 def reindex_to_calendar(calendar, data, freq='1d'):
+    if data.empty:
+        return None
     start_session, end_session = data.index[[0, -1]]
     if not isinstance(start_session, pd.Timestamp):
         start_session = pd.Timestamp(start_session, unit='m')
@@ -259,6 +261,9 @@ def tdx_bundle(assets,
                 func(symbol, start, end, freq),
                 freq=freq,
             )
+            if data is None:
+                yield int(symbol), pd.DataFrame()
+                continue
             if freq == '1d':
                 data.to_sql(SESSION_BAR_TABLE, session_bars.connect(), if_exists='append', index_label='day')
                 if symbol in dates_json[freq]:
@@ -266,7 +271,7 @@ def tdx_bundle(assets,
                         "select * from {} where id = {} order by day ASC ".format(SESSION_BAR_TABLE, int(symbol)),
                         session_bars, index_col='day')
                     data.index = pd.to_datetime(data.index)
-            dates_json[freq][symbol] = end.strftime('%Y%m%d')
+            dates_json[freq][symbol] = data.index[-1].strftime('%Y%m%d')
             yield int(symbol), data
 
             with open(dates_path, 'w') as f:
@@ -276,14 +281,6 @@ def tdx_bundle(assets,
 
     assets = set([int(s) for s in symbol_map])
     daily_bar_writer.write(gen_symbols_data(symbol_map, freq="1d"), assets=assets, show_progress=show_progress)
-
-    if ingest_minute:
-        with click.progressbar(gen_symbols_data(symbol_map, freq="1m"),
-                               label="Merging minute equity files:",
-                               length=len(assets),
-                               item_show_func=lambda e: e if e is None else str(e[0]),
-                               ) as bar:
-            minute_bar_writer.write(bar, show_progress=False)
 
     splits, dividends, shares = fetch_splits_and_dividends(eg, symbols, start_session, end_session)
     metas = pd.read_sql("select id as symbol,min(day) as start_date,max(day) as end_date from bars group by id;",
@@ -308,6 +305,14 @@ def tdx_bundle(assets,
             fundamental_writer.write(start_session, end_session)
         except Exception as e:
             pass
+
+    if ingest_minute:
+        with click.progressbar(gen_symbols_data(symbol_map, freq="1m"),
+                               label="Merging minute equity files:",
+                               length=len(assets),
+                               item_show_func=lambda e: e if e is None else str(e[0]),
+                               ) as bar:
+            minute_bar_writer.write(bar, show_progress=False)
 
     eg.exit()
 

@@ -81,6 +81,9 @@ class TdxBroker(Broker):
     def subscribed_assets(self):
         return self._subscribed_assets
 
+    def is_alive(self):
+        return True
+
     @property
     def positions(self):
         now = datetime.datetime.now()

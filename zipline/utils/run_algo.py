@@ -76,7 +76,8 @@ def _run(handle_data,
          environ,
          broker,
          state_filename,
-         realtime_bar_target):
+         realtime_bar_target,
+         reader = "bcolz"):
     """Run a backtest for the given algorithm.
 
     This is shared between the cli and :func:`zipline.run_algo`.
@@ -135,6 +136,7 @@ def _run(handle_data,
             bundle,
             environ,
             bundle_timestamp,
+            reader = reader
         )
 
         prefix, connstr = re.split(
@@ -296,7 +298,8 @@ def run_algorithm(start,
                   environ=os.environ,
                   broker=None,
                   state_filename=None,
-                  realtime_bar_target=None
+                  realtime_bar_target=None,
+                  reader = "bcolz"
                   ):
     """Run a trading algorithm.
 
@@ -428,5 +431,6 @@ def run_algorithm(start,
         environ=environ,
         broker=broker,
         state_filename=state_filename,
-        realtime_bar_target=realtime_bar_target
+        realtime_bar_target=realtime_bar_target,
+        reader=reader
     )

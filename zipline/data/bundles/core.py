@@ -16,6 +16,7 @@ from ..us_equity_pricing import (
     SQLiteAdjustmentWriter,
 )
 from ..fundamental import FundamentalReader, FundamentalWriter
+from ..rocksdb_bars import RocksdbMinuteBarWriter, RocksdbMinuteBarReader
 from ..minute_bars import (
     BcolzMinuteBarReader,
     BcolzMinuteBarWriter,
@@ -352,7 +353,8 @@ def _make_bundle_core():
                environ=os.environ,
                timestamp=None,
                assets_versions=(),
-               show_progress=False, ):
+               show_progress=False,
+               writer="bcolz"):
         """Ingest data for a given bundle.
 
         Parameters
@@ -432,13 +434,22 @@ def _make_bundle_core():
                 pth.ensure_directory(
                     minute_bars_path
                 )
-                minute_bar_writer = BcolzMinuteBarWriter(
-                    minute_bars_path,
-                    calendar,
-                    start_session,
-                    end_session,
-                    minutes_per_day=bundle.minutes_per_day,
-                )
+                if writer == "rocksdb":
+                    minute_bar_writer = RocksdbMinuteBarWriter(
+                        minute_bars_path,
+                        calendar,
+                        start_session,
+                        end_session,
+                        minutes_per_day=bundle.minutes_per_day,
+                    )
+                else:
+                    minute_bar_writer = BcolzMinuteBarWriter(
+                        minute_bars_path,
+                        calendar,
+                        start_session,
+                        end_session,
+                        minutes_per_day=bundle.minutes_per_day,
+                    )
                 wd.ensure_dir(
                     name, timestr,
                 )
@@ -535,7 +546,7 @@ def _make_bundle_core():
                 ),
             )
 
-    def load(name, environ=os.environ, timestamp=None):
+    def load(name, environ=os.environ, timestamp=None, reader="bcolz"):
         """Loads a previously ingested bundle.
 
         Parameters
@@ -547,6 +558,8 @@ def _make_bundle_core():
         timestamp : datetime, optional
             The timestamp of the data to lookup.
             Defaults to the current time.
+        reader : str
+            minute reader
 
         Returns
         -------
@@ -556,13 +569,18 @@ def _make_bundle_core():
         if timestamp is None:
             timestamp = pd.Timestamp.utcnow()
         timestr = most_recent_data(name, timestamp, environ=environ)
+        minute_reader = BcolzMinuteBarReader(
+                minute_equity_path(name, timestr, environ=environ),
+            )
+        if reader == "rocksdb":
+            minute_reader = RocksdbMinuteBarReader(
+                minute_equity_path(name, timestr, environ=environ),
+            )
         return BundleData(
             asset_finder=AssetFinder(
                 asset_db_path(name, timestr, environ=environ),
             ),
-            equity_minute_bar_reader=BcolzMinuteBarReader(
-                minute_equity_path(name, timestr, environ=environ),
-            ),
+            equity_minute_bar_reader=minute_reader,
             equity_daily_bar_reader=BcolzDailyBarReader(
                 daily_equity_path(name, timestr, environ=environ),
             ),
