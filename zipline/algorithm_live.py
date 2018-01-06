@@ -107,7 +107,7 @@ class LiveTradingAlgorithm(TradingAlgorithm):
         before_trading_start_minutes = days_at_time(
             self.sim_params.sessions,
             time(8, 45),
-            "US/Eastern"
+            self.trading_calendar.tz
         )
 
         return RealtimeClock(

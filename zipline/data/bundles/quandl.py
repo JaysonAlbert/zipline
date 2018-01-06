@@ -391,7 +391,8 @@ def quantopian_quandl_bundle(environ,
                              end_session,
                              cache,
                              show_progress,
-                             output_dir):
+                             output_dir,
+                             writer="bcolz"):
     if show_progress:
         data = download_with_progress(
             QUANTOPIAN_QUANDL_URL,
