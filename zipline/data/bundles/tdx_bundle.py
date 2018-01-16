@@ -245,6 +245,9 @@ def tdx_bundle(assets,
                 end = end - pd.Timedelta('1 D')
         else:
             end = end_session
+        end_idx = calendar.all_sessions.searchsorted(end)
+        if calendar.all_sessions[end_idx] > end:
+            end = calendar.all_sessions[end_idx -1]
 
         if freq == '1m':
             if distance >= 100:
@@ -253,6 +256,7 @@ def tdx_bundle(assets,
         for index, symbol in symbol_map.iteritems():
             try:
                 start = pd.to_datetime(dates_json[freq][symbol], utc=True) + pd.Timedelta('1 D')
+                start = calendar.all_sessions[calendar.all_sessions.searchsorted(start)]
                 if start > end:
                     if freq == '1d'and symbol in dates_json[freq]:
                         data = pd.read_sql(
@@ -283,8 +287,11 @@ def tdx_bundle(assets,
                     data2 = pd.read_sql(
                         "select * from {} where id = {} order by day desc limit 1 ".format(SESSION_BAR_TABLE, int(symbol)),
                         session_bars, index_col='day')
-                    data["close"][0] = data2["close"][0]
-                    fillna(data)
+                    if data2.empty:
+                        data = data[data.close.notnull()]
+                    else:
+                        data["close"][0] = data2["close"][0]
+                        fillna(data)
                 data.to_sql(SESSION_BAR_TABLE, session_bars.connect(), if_exists='append', index_label='day')
                 if symbol in dates_json[freq]:
                     data = pd.read_sql(
