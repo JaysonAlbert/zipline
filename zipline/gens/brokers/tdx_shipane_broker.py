@@ -41,7 +41,7 @@ class TdxShipaneBroker(TdxBroker):
 
     def __init__(self, tdx_uri, shipane_client, account_id=None):
         self._shipane_client = shipane_client
-        super(TdxShipaneBroker, self).__init__(tdx_uri, account_id)
+        # super(TdxShipaneBroker, self).__init__(tdx_uri, account_id)
 
     @property
     def positions(self):
@@ -158,7 +158,7 @@ class TdxShipaneBroker(TdxBroker):
     def _tdx_to_zp_order_id(self, order_id):
         return "TDX-{date}-{account_id}-{order_id}".format(
             date=str(pd.to_datetime('today').date()),
-            account_id=self._client.account_id(),
+            account_id="XXX",
             order_id=order_id
         )
 

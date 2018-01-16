@@ -736,7 +736,10 @@ class RocksdbMinuteBarReader(BcolzMinuteBarReader):
             Returns the integer value of the volume.
             (A volume of 0 signifies no trades for the given dt.)
         """
-        key = struct.pack(">i", int(dt.value / 10 ** 9))
+        dt_value = int(dt.value / 10 ** 9)
+        if int(dt.tz._utcoffset.seconds / 3600) != int(self.tz_utcoffset_seconds / 3600):
+            dt_value -= self.tz_utcoffset_seconds
+        key = struct.pack(">i", dt_value)
         path = self.sidpath(sid.sid)
         db = self._open_db(sid.sid, path)
         value = db.get(b'default', key)
@@ -836,10 +839,12 @@ class RocksdbMinuteBarReader(BcolzMinuteBarReader):
             (minutes in range, sids) with a dtype of float64, containing the
             values for the respective field over start and end dt range.
         """
-        local_tz = self.calendar.tz
-
-        start_idx = struct.pack(">i", int(start_dt.value // 10 ** 9) - self.tz_utcoffset_seconds)
-        end_idx = struct.pack(">i", int(end_dt.value // 10 ** 9) - self.tz_utcoffset_seconds)
+        data_tz = start_dt.tz
+        offset = 0
+        if int(data_tz._utcoffset.seconds / 3600) != int(self.tz_utcoffset_seconds / 3600):
+            offset -= self.tz_utcoffset_seconds
+        start_idx = struct.pack(">i", int(start_dt.value // 10 ** 9) + offset)
+        end_idx = struct.pack(">i", int(end_dt.value // 10 ** 9) + offset)
 
         # num_minutes = (end_idx - start_idx + 1)
 
