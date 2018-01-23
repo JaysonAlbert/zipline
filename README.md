@@ -1,10 +1,10 @@
-![image](http://www.zipline-live.io/images/zipline_live.png%0A%20:target:%20https://github.com/JaysonAlbert/zipline%0A%20:width:%20212px%0A%20:align:%20center%0A%20:alt:%20zipline-live)
+![image](http://www.zipline-live.io/images/zipline_live.png)
 
 zipline-live
 ============
 
-![pypi
-badge](https://badge.fury.io/py/cn-zipline-live.svg%0A%20:target:%20https://pypi.python.org/pypi/cn-zipline-live)
+[![pypi
+badge](https://badge.fury.io/py/cn-zipline-live.svg)](https://pypi.python.org/pypi/cn-zipline-live)
 [![version
 status](https://img.shields.io/pypi/pyversions/cn-zipline-live.svg)](https://pypi.python.org/pypi/cn-zipline-live)
 ![travis
