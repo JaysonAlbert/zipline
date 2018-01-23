@@ -41,6 +41,14 @@ class TdxShipaneBroker(TdxBroker):
 
     def __init__(self, tdx_uri, shipane_client, account_id=None):
         self._shipane_client = shipane_client
+        self._orders = {}
+        self.currency = 'RMB'
+        self._subscribed_assets = []
+        self._bars = {}
+        self._bars_update_dt = None
+        self._bars_update_interval = pd.tslib.Timedelta('5 S')
+        self._mkt_client = Engine(auto_retry=True, best_ip=True)
+        self._mkt_client.connect()
         # super(TdxShipaneBroker, self).__init__(tdx_uri, account_id)
 
     @property
@@ -51,8 +59,9 @@ class TdxShipaneBroker(TdxBroker):
             if isinstance(pos, list):
                 pos = TdxPosition(*pos)
             sid = pos.sid
-            available = pos.available
+
             z_position = protocol.Position(symbol(sid))
+            z_position.available = pos.available
             z_position.amount = pos.amount
             z_position.cost_basis = pos.cost_basis
             z_position.last_sale_price = pos.last_sale_price
@@ -200,7 +209,7 @@ class TdxShipaneBroker(TdxBroker):
     @property
     def transactions(self):
         # TODO: do we need the tx record now?
-        t = self._client.transactions()
+        # t = self._client.transactions()
         rt = {}
         return rt
 
