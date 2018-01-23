@@ -73,7 +73,11 @@ def fetch_single_equity(engine, symbol, start=None, end=None, freq='1d'):
     df = engine.get_security_bars(symbol, freq, start, end)
     if df is None or df.empty:
         return df
-    df['volume'] = df['vol'].astype(np.int32) * 100  # hands * 100 == shares
+    df.loc[df.vol < 1, 'vol'] = 0  # 处理浮点数极小值
+    mask = df['high'] * df['vol'] >= df['amount'] / 10 # handle vol * 100 share
+    df.loc[~mask,'vol'] = df['vol'] * 100
+
+    df['volume'] = df['vol'].astype(np.int32)
 
     if freq == '1d':
         df['id'] = int(symbol)
@@ -211,6 +215,7 @@ def tdx_bundle(assets,
                cache,
                show_progress,
                output_dir):
+    # eg = Engine(auto_retry=True, multithread=True, best_ip=True, thread_num=1)
     eg = Engine(auto_retry=True, multithread=True, best_ip=True, thread_num=1)
     eg.connect()
 
@@ -249,10 +254,6 @@ def tdx_bundle(assets,
         if calendar.all_sessions[end_idx] > end:
             end = calendar.all_sessions[end_idx -1]
 
-        if freq == '1m':
-            if distance >= 100:
-                func = eg.get_k_data
-
         for index, symbol in symbol_map.iteritems():
             try:
                 start = pd.to_datetime(dates_json[freq][symbol], utc=True) + pd.Timedelta('1 D')
@@ -265,9 +266,14 @@ def tdx_bundle(assets,
                         data.index = pd.to_datetime(data.index)
                         yield int(symbol), data
                     else:
-                        continue
+                        yield int(symbol), pd.DataFrame()
+                    continue
             except KeyError:
                 start = start_session
+            if freq == '1m':
+                single_distance = calendar.session_distance(start, end)
+                if single_distance >= 100:
+                    func = eg.get_k_data
             data = reindex_to_calendar(
                 calendar,
                 func(symbol, start, end, freq),

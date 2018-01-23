@@ -72,6 +72,8 @@ class TdxBroker(Broker):
             return
         for code in self.subscribed_assets:
             bars = self._mkt_client.time_and_price(code.symbol)
+            if bars.empty:
+                return
             bars.index = bars.index.tz_localize('Asia/Shanghai').tz_convert('UTC')
             self._bars[code.symbol] = bars
 
@@ -293,7 +295,8 @@ class TdxBroker(Broker):
         symbol = str(assets.symbol)
         self.subscribe_to_market_data(assets)
         self._update_bars()
-
+        if symbol not in self._bars:
+            return pd.NaT if field == 'last_traded' else np.NaN
         bars = self._bars[symbol]
         last_event_time = bars.index[-1]
 
@@ -330,7 +333,7 @@ class TdxBroker(Broker):
         if frequency == '1m':
             resample_freq = 'Min'
         elif frequency == '1d':
-            resample_freq = '24 H'
+            resample_freq = 'd'
         else:
             raise ValueError("Invalid frequency specified: %s" % frequency)
 
@@ -344,10 +347,10 @@ class TdxBroker(Broker):
             trade_prices = self._bars[symbol]['price']
             trade_sizes = self._bars[symbol]['vol']
             ohlcv = trade_prices.resample(resample_freq,
-                                          label='right',
+                                          label='left',
                                           closed='left').ohlc()
             ohlcv['volume'] = trade_sizes.resample(resample_freq,
-                                                   label='right',
+                                                   label='left',
                                                    closed='left').sum()
 
             ohlcv.columns = pd.MultiIndex.from_product([[asset, ],

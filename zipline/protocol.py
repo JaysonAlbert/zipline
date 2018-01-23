@@ -231,9 +231,11 @@ class Position(object):
     def __init__(self, asset):
         self.asset = asset
         self.amount = 0
+        self.available = 0
         self.cost_basis = 0.0  # per share
         self.last_sale_price = 0.0
         self.last_sale_date = None
+
 
     @property
     def sid(self):

@@ -429,20 +429,9 @@ class RocksdbMinuteBarWriter(BcolzMinuteBarWriter):
             close_col[dt_ixs],
             vol_col[dt_ixs],
         ) = convert_cols(cols, ohlc_ratio, sid, invalid_data_behavior)
-        single_size = len(struct.pack('@i', open_col[0]))
         for i in range(0, minutes_count):
-            bts = bytearray(single_size*5)
-            index = 0
-            bts[index: index+single_size] = struct.pack('@i',open_col[i])
-            index += single_size
-            bts[index: index + single_size] = struct.pack('@i', close_col[i])
-            index += single_size
-            bts[index: index + single_size] = struct.pack('@i', high_col[i])
-            index += single_size
-            bts[index: index + single_size] = struct.pack('@i', low_col[i])
-            index += single_size
-            bts[index: index + single_size] = struct.pack('@i', vol_col[i])
-            table.put(b'default', struct.pack('>i',int(time.mktime(all_minutes_in_window[i].timetuple()))), bytes(bts))
+            bts = struct.pack("@iiiii", open_col[i], close_col[i], high_col[i], low_col[i], vol_col[i])
+            table.put(b'default', struct.pack('>i',int(time.mktime(all_minutes_in_window[i].timetuple()))), bts)
 
         self.db.close()
         del self.db
@@ -810,6 +799,8 @@ class RocksdbMinuteBarReader(BcolzMinuteBarReader):
         self._close_db(sid, db)
         # vals["dt"] = dts
         df = pd.DataFrame.from_dict(vals)
+        if df.empty:
+            return df
         # df["dt"] = pd.to_datetime(df['dt'])
         ohlc_ratio = self._ohlc_ratio_inverse_for_sid(sid)
         for field in fields:
