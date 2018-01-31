@@ -14,7 +14,7 @@ from sqlalchemy import create_engine
 from zipline.data.us_equity_pricing import (
     SQLITE_ADJUSTMENT_COLUMN_DTYPES,
     SQLITE_SHARES_COLUMN_DTYPES,
-    SQLITE_STOCK_DIVIDEND_PAYOUT_COLUMN_DTYPES,
+    SQLITE_DIVIDEND_PAYOUT_COLUMN_DTYPES,
 )
 
 from os.path import join
@@ -81,6 +81,19 @@ def fetch_single_equity(engine, symbol, start=None, end=None, freq='1d'):
     return df.drop(['vol', 'amount', 'code'], axis=1)
 
 
+def async_fetch_single_euqity(asyncEngine, symbolList, start=None, end=None, freq='1d'):
+    equityList = asyncEngine.get_async_security_bars(symbolList, freq, start, end)
+    for df in equityList:
+        if df is None or df.empty:
+            continue
+        df['volume'] = df['vol'].astype(np.int32) * 100  # hands * 100 == shares
+
+        if freq == '1d':
+            df['id'] = df.code.apply(int)
+
+        yield df.drop(['vol', 'amount', 'code'], axis=1)
+
+
 def fetch_single_split_and_dividend(engine, symbol):
     df = engine.xdxr(symbol)
     if df.empty:
@@ -107,7 +120,7 @@ def fetch_single_split_and_dividend(engine, symbol):
 
     dfs = df[df.category != 1]
 
-    if dfs.empty:
+    if dfs.empty | pd.isnull(dfs.houzongguben).all():
         shares = pd.DataFrame()
     else:
         shares = pd.DataFrame({
@@ -116,7 +129,7 @@ def fetch_single_split_and_dividend(engine, symbol):
             'shares': dfs.houzongguben,
             'circulation': dfs.panhouliutong,
         })
-
+    # print(shares)
     return splits, dividends, shares
 
 
@@ -130,21 +143,18 @@ def fetch_splits_and_dividends(engine, symbols, start=None, end=None):
         all_dividends.append(dividend)
         all_shares.append(share)
 
-    if len(all_splits) != 0:
-        splits = pd.concat(all_splits)
-        dividends = pd.concat(all_dividends)
-        shares = pd.concat(all_shares)
-    else:
-        splits = pd.DataFrame(
-            np.array([], dtype=list(SQLITE_ADJUSTMENT_COLUMN_DTYPES.items())),
-        )
-        dividends = pd.DataFrame(
-            np.array([], dtype=list(SQLITE_STOCK_DIVIDEND_PAYOUT_COLUMN_DTYPES.items())),
-        )
-        shares = pd.DataFrame(
-            np.array([], dtype=list(SQLITE_SHARES_COLUMN_DTYPES.items())),
-        )
-        return splits, dividends, shares
+    splits = pd.concat(all_splits)
+    dividends = pd.concat(all_dividends)
+    shares = pd.concat(all_shares)
+    splits = splits if not splits.empty else pd.DataFrame(
+        np.array([], dtype=list(SQLITE_ADJUSTMENT_COLUMN_DTYPES.items())),
+    )
+    dividends = dividends if not dividends.empty else pd.DataFrame(
+        np.array([], dtype=list(SQLITE_DIVIDEND_PAYOUT_COLUMN_DTYPES.items())),
+    )
+    shares = shares if not shares.empty else pd.DataFrame(
+        np.array([], dtype=list(SQLITE_SHARES_COLUMN_DTYPES.items())),
+    )
 
     if start:
         dividends = dividends[dividends.ex_date >= start]
@@ -173,12 +183,17 @@ def reindex_to_calendar(calendar, data, freq='1d', start_session=None, end_sessi
         return None
     if start_session is None:
         start_session, end_session = data.index[[0, -1]]
+
     if not isinstance(start_session, pd.Timestamp):
         start_session = pd.Timestamp(start_session, unit='m')
         end_session = pd.Timestamp(end_session, unit='m')
 
     start_session = start_session.normalize()
     end_session = end_session.normalize()
+
+    # start_session must >= data.index[0], 不然会去到NAN数据
+    if start_session.tz_localize(None) < data.index[0]:
+        start_session = data.index[0]
 
     if freq == '1d':
         all_sessions = calendar.sessions_in_range(start_session, end_session).tz_localize(None)
@@ -211,10 +226,10 @@ def tdx_bundle(assets,
                cache,
                show_progress,
                output_dir):
-    eg = Engine(auto_retry=True, multithread=True, best_ip=True, thread_num=1)
+    eg = Engine(auto_retry=True, multithread=True, best_ip=True, thread_num=1, raise_exception=True)
     eg.connect()
 
-    aeg = AsyncEngine(best_ip=True)
+    aeg = AsyncEngine(ip='202.108.253.130', auto_retry=True, raise_exception=True)
     aeg.connect()
 
     symbols = fetch_symbols(eg, assets)
@@ -224,16 +239,66 @@ def tdx_bundle(assets,
     distance = calendar.session_distance(start_session, today)
 
     dates_path = join(output_dir, DATE_DIR)
+    session_bars = create_engine('sqlite:///' + join(output_dir, SESSION_BAR_DB)
+                                 + '?check_same_thread=False')
+
+    now = pd.to_datetime('now', utc=True)
+    # 判断 end 的时间
+    if end_session >= now.normalize():
+        end = now.normalize()
+        if now.tz_convert('Asia/Shanghai').time() < datetime.time(15, 5):
+            end = end - pd.Timedelta('1 D')
+    else:
+        end = end_session
+    end_idx = calendar.all_sessions.searchsorted(end)
+    if calendar.all_sessions[end_idx] > end:
+        end = calendar.all_sessions[end_idx - 1]
+
+    first = True
     if os.path.isfile(dates_path):
+        first = False
         with open(dates_path, 'r') as f:
             dates_json = json.load(f)
     else:
+        first = True
         dates_json = {
             '1d': {},
             '1m': {}
         }
 
-    session_bars = create_engine('sqlite:///' + join(output_dir, SESSION_BAR_DB))
+    def gen_first_symbol_data():
+        Base.metadata.create_all(session_bars.connect(), checkfirst=True,
+                                 tables=[Base.metadata.tables[SESSION_BAR_TABLE]])
+        symbol_map = symbols.code
+        freq = '1d'
+        func = partial(async_fetch_single_euqity, aeg)
+        # 步长为limitNum对symbols进行切片
+        limitNum = 500
+        a = int(len(symbol_map) / limitNum)
+        with click.progressbar(range(a+1),
+                               label="Merging daily equity files:",
+                               # item_show_func=lambda e: e if e is None else str(e),
+                               ) as abc:
+            for i in abc:
+                head = i * limitNum
+                tail = head + limitNum
+                euqitiesList = func(symbol_map[head: tail].tolist(), start_session, end_session, freq)
+                for e in euqitiesList:
+                    data = reindex_to_calendar(
+                        calendar,
+                        e,
+                        start_session=start_session, end_session=end,
+                        freq=freq,
+                    )
+                    print("---" + str(e.id[0]) + "-----")
+                    if data.empty:
+                        continue
+                    data.to_sql(SESSION_BAR_TABLE, session_bars.connect(), if_exists='append', index_label='day')
+                    dates_json[freq][str(e.id[0])] = data.index[-1].strftime('%Y%m%d')
+                    yield int(e.id[0]), data
+        with open(dates_path, 'w') as f:
+            json.dump(dates_json, f)
+
 
     def gen_symbols_data(symbol_map, freq='1d'):
         if not session_bars.has_table(SESSION_BAR_TABLE):
@@ -241,16 +306,6 @@ def tdx_bundle(assets,
                                      tables=[Base.metadata.tables[SESSION_BAR_TABLE]])
 
         func = partial(fetch_single_equity, eg)
-        now = pd.to_datetime('now', utc=True)
-        if end_session >= now.normalize():
-            end = now.normalize()
-            if now.tz_convert('Asia/Shanghai').time() < datetime.time(15, 5):
-                end = end - pd.Timedelta('1 D')
-        else:
-            end = end_session
-        end_idx = calendar.all_sessions.searchsorted(end)
-        if calendar.all_sessions[end_idx] > end:
-            end = calendar.all_sessions[end_idx -1]
 
         if freq == '1m':
             if distance >= 100:
@@ -261,7 +316,7 @@ def tdx_bundle(assets,
                 start = pd.to_datetime(dates_json[freq][symbol], utc=True) + pd.Timedelta('1 D')
                 start = calendar.all_sessions[calendar.all_sessions.searchsorted(start)]
                 if start > end:
-                    if freq == '1d'and symbol in dates_json[freq]:
+                    if freq == '1d' and symbol in dates_json[freq]:
                         data = pd.read_sql(
                             "select * from {} where id = {} order by day ASC ".format(SESSION_BAR_TABLE, int(symbol)),
                             session_bars, index_col='day')
@@ -278,7 +333,7 @@ def tdx_bundle(assets,
                 freq=freq,
             )
             if data is None or data.empty:
-                if freq == '1d'and symbol in dates_json[freq]:
+                if freq == '1d' and symbol in dates_json[freq]:
                     data = pd.read_sql(
                         "select * from {} where id = {} order by day ASC ".format(SESSION_BAR_TABLE, int(symbol)),
                         session_bars, index_col='day')
@@ -288,7 +343,8 @@ def tdx_bundle(assets,
             if freq == '1d':
                 if data.close.isnull()[0]:  # padding fill error if the first is NaN
                     data2 = pd.read_sql(
-                        "select * from {} where id = {} order by day desc limit 1 ".format(SESSION_BAR_TABLE, int(symbol)),
+                        "select * from {} where id = {} order by day desc limit 1 ".format(SESSION_BAR_TABLE,
+                                                                                           int(symbol)),
                         session_bars, index_col='day')
                     if data2.empty:
                         data = data[data.close.notnull()]
@@ -310,14 +366,17 @@ def tdx_bundle(assets,
     symbol_map = symbols.symbol
 
     assets = set([int(s) for s in symbol_map])
-    daily_bar_writer.write(gen_symbols_data(symbol_map, freq="1d"), assets=assets, show_progress=show_progress)
+    if first:
+        daily_bar_writer.write(gen_first_symbol_data(), assets=assets, show_progress=show_progress)
+    else:
+        daily_bar_writer.write(gen_symbols_data(symbol_map, freq="1d"), assets=assets, show_progress=show_progress)
 
     splits, dividends, shares = fetch_splits_and_dividends(eg, symbols, start_session, end_session)
     metas = pd.read_sql("select id as symbol,min(day) as start_date,max(day) as end_date from bars group by id;",
                         session_bars,
-                        parse_dates=['start_date','end_date']
+                        parse_dates=['start_date', 'end_date']
                         )
-    metas['symbol'] = metas['symbol'].apply(lambda x:format(x,'06'))
+    metas['symbol'] = metas['symbol'].apply(lambda x: format(x, '06'))
     metas['first_traded'] = metas['start_date']
     metas['auto_close_date'] = metas['end_date']
 
@@ -337,13 +396,15 @@ def tdx_bundle(assets,
             pass
 
     if ingest_minute:
-        with click.progressbar(gen_symbols_data(symbol_map, freq="1m"),
+        with click.progressbar(
+                gen_symbols_data(symbol_map, freq="1m"),
                                label="Merging minute equity files:",
                                length=len(assets),
                                item_show_func=lambda e: e if e is None else str(e[0]),
                                ) as bar:
             minute_bar_writer.write(bar, show_progress=False)
 
+    aeg.exit()
     eg.exit()
 
 

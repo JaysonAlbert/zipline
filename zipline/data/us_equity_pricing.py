@@ -732,6 +732,7 @@ class BcolzDailyBarReader(SessionBarReader):
             raise NoDataOnDate("day={0} is outside of calendar={1}".format(
                 day, self.sessions))
         offset = day_loc - self._calendar_offsets[sid]
+
         if offset < 0:
             raise NoDataBeforeDate(
                 "No data on or before day={0} for sid={1}".format(
