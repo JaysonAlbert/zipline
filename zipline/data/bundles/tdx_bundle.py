@@ -275,27 +275,24 @@ def tdx_bundle(assets,
         # 步长为limitNum对symbols进行切片
         limitNum = 500
         a = int(len(symbol_map) / limitNum)
-        with click.progressbar(range(a+1),
-                               label="Merging daily equity files:",
-                               # item_show_func=lambda e: e if e is None else str(e),
-                               ) as abc:
-            for i in abc:
-                head = i * limitNum
-                tail = head + limitNum
-                euqitiesList = func(symbol_map[head: tail].tolist(), start_session, end_session, freq)
-                for e in euqitiesList:
-                    data = reindex_to_calendar(
-                        calendar,
-                        e,
-                        start_session=start_session, end_session=end,
-                        freq=freq,
-                    )
-                    print("---" + str(e.id[0]) + "-----")
-                    if data.empty:
-                        continue
-                    data.to_sql(SESSION_BAR_TABLE, session_bars.connect(), if_exists='append', index_label='day')
-                    dates_json[freq][str(e.id[0])] = data.index[-1].strftime('%Y%m%d')
-                    yield int(e.id[0]), data
+
+        for i in range(a+1):
+            head = i * limitNum
+            tail = head + limitNum
+            euqitiesList = func(symbol_map[head: tail].tolist(), start_session, end_session, freq)
+            for e in euqitiesList:
+                data = reindex_to_calendar(
+                    calendar,
+                    e,
+                    start_session=start_session, end_session=end,
+                    freq=freq,
+                )
+                print("---" + str(e.id[0]) + "-----")
+                if data.empty:
+                    continue
+                data.to_sql(SESSION_BAR_TABLE, session_bars.connect(), if_exists='append', index_label='day')
+                dates_json[freq][str(e.id[0])] = data.index[-1].strftime('%Y%m%d')
+                yield int(e.id[0]), data
         with open(dates_path, 'w') as f:
             json.dump(dates_json, f)
 
