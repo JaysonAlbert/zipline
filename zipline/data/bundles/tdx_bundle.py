@@ -191,9 +191,9 @@ def reindex_to_calendar(calendar, data, freq='1d', start_session=None, end_sessi
     start_session = start_session.normalize()
     end_session = end_session.normalize()
 
-    # start_session must >= data.index[0], 不然会去到NAN数据
+    # start_session must >= data.index[0], 不然会去取到NAN数据
     if start_session.tz_localize(None) < data.index[0]:
-        start_session = data.index[0]
+        start_session = data.index[0].normalize()
 
     if freq == '1d':
         all_sessions = calendar.sessions_in_range(start_session, end_session).tz_localize(None)
@@ -278,18 +278,21 @@ def tdx_bundle(assets,
         limitNum = 50
         a = int(len(symbol_map) / limitNum)
 
-        for i in range(a+1):
+        for i in range(a + 1):
             head = i * limitNum
             tail = head + limitNum
             euqitiesList = func(symbol_map[head: tail].tolist(), start_session, end_session, freq)
-            for e in euqitiesList:
+            for c, e in euqitiesList:
+                if e.empty:
+                    error_list.append(c)
+                    continue
                 data = reindex_to_calendar(
                     calendar,
                     e,
                     start_session=start_session, end_session=end,
                     freq=freq,
                 )
-                print("---" + str(e.id[0]) + "-----")
+                print("\r---" + str(e.id[0]) + "-----",  end='')
                 if data.empty:
                     continue
                 data.to_sql(SESSION_BAR_TABLE, session_bars.connect(), if_exists='append', index_label='day')
@@ -330,19 +333,31 @@ def tdx_bundle(assets,
                 start_session=start, end_session=end,
                 freq=freq,
             )
-            if data is None or data.empty:
-                if freq == '1d' and symbol in dates_json[freq]:
+            if freq == '1d' and symbol in dates_json[freq]:
+                if data is None or data.empty:
                     data = pd.read_sql(
                         "select * from {} where id = {} order by day ASC ".format(SESSION_BAR_TABLE, int(symbol)),
                         session_bars, index_col='day')
                     data.index = pd.to_datetime(data.index)
+
+                    if end.tz_localize(None) != data.index[-1]:
+                        emptyData = pd.DataFrame.from_records([{
+                            'id': int(symbol),
+                            'day': end.tz_localize(None),
+                            'open': 0.0,
+                            'high': 0.0,
+                            'low': 0.0,
+                            'close': 0.0,
+                            'volume': 0,
+                        }], index='day')
+                        data.append(emptyData)
+                        emptyData.to_sql(SESSION_BAR_TABLE, session_bars.connect(), if_exists='append', index_label='day')
                     yield int(symbol), data
-                continue
-            if freq == '1d':
+                    continue
+
                 if data.close.isnull()[0]:  # padding fill error if the first is NaN
                     data2 = pd.read_sql(
-                        "select * from {} where id = {} order by day desc limit 1 ".format(SESSION_BAR_TABLE,
-                                                                                           int(symbol)),
+                        "select * from {} where id = {} order by day desc limit 1 ".format(SESSION_BAR_TABLE, int(symbol)),
                         session_bars, index_col='day')
                     if data2.empty:
                         data = data[data.close.notnull()]
@@ -361,40 +376,53 @@ def tdx_bundle(assets,
             with open(dates_path, 'w') as f:
                 json.dump(dates_json, f)
     assets = set([int(s) for s in symbols.symbol])
+    is_daily_updated = True
     if first:
+        is_daily_updated = False
         daily_bar_writer.write(gen_first_symbol_data(), assets=assets, show_progress=show_progress)
     else:
-        daily_bar_writer.write(gen_symbols_data(symbols.symbol, freq="1d"), assets=assets, show_progress=show_progress)
+        for v in dates_json['1d'].values():
+            start = pd.to_datetime(v, utc=True) + pd.Timedelta('1 D')
+            start = calendar.all_sessions[calendar.all_sessions.searchsorted(start)]
+            if start <= end:
+                is_daily_updated = False
+                break
+        if not is_daily_updated:
+            daily_bar_writer.write(gen_symbols_data(symbols.symbol, freq="1d"), assets=assets, show_progress=show_progress)
+
 
     symbols= symbols[~symbols.symbol.isin(error_list)]
 
-    splits, dividends, shares = fetch_splits_and_dividends(eg, symbols, start_session, end_session)
-    metas = pd.read_sql("select id as symbol,min(day) as start_date,max(day) as end_date from bars group by id;",
-                        session_bars,
-                        parse_dates=['start_date', 'end_date']
-                        )
-    metas['symbol'] = metas['symbol'].apply(lambda x: format(x, '06'))
-    metas['first_traded'] = metas['start_date']
-    metas['auto_close_date'] = metas['end_date']
+    if not is_daily_updated:
+        splits, dividends, shares = fetch_splits_and_dividends(eg, symbols, start_session, end_session)
+        metas = pd.read_sql("select id as symbol,min(day) as start_date,max(day) as end_date from bars group by id;",
+                            session_bars,
+                            parse_dates=['start_date', 'end_date']
+                            )
+        metas['symbol'] = metas['symbol'].apply(lambda x: format(x, '06'))
+        metas['first_traded'] = metas['start_date']
+        metas['auto_close_date'] = metas['end_date']
 
-    symbols = symbols.set_index('symbol', drop=False).join(metas.set_index('symbol'), how='inner')
-    asset_db_writer.write(symbols)
-    adjustment_writer.write(
-        splits=splits,
-        dividends=dividends,
-        shares=shares
-    )
+        symbols = symbols.set_index('symbol', drop=False).join(metas.set_index('symbol'), how='inner')
+        asset_db_writer.write(symbols)
+        adjustment_writer.write(
+            splits=splits,
+            dividends=dividends,
+            shares=shares
+        )
 
-    if fundamental:
-        logger.info("writing fundamental data:")
-        try:
+        if fundamental:
+            logger.info("writing fundamental data:")
             fundamental_writer.write(start_session, end_session)
-        except Exception as e:
-            pass
+
 
     if ingest_minute:
         with click.progressbar(
-                               ) as bar:
+                gen_symbols_data(symbols.symbol, freq="1m"),
+                label="Merging minute equity files:",
+                length=len(assets),
+                item_show_func=lambda e: e if e is None else str(e[0]),
+        ) as bar:
             minute_bar_writer.write(bar, show_progress=False)
 
     if len(error_list) != 0:
