@@ -80,9 +80,9 @@ tables==3.3.0
 
 # for cn-zipline-live
 
-pytdx>=1.55
+pytdx-async>=1.55
 cn-treasury_curve>=0.6
 cn-stock-holidays>=1.1
-tdx-wrapper>=0.61
+tdx-wrapper-async>=1.2.1
 zerorpc>=0.6.1
 # python-rocksdb>=0.6.7
