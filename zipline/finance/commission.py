@@ -354,3 +354,110 @@ class PerDollar(EquityCommissionModel):
         """
         cost_per_share = transaction.price * self.cost_per_dollar
         return abs(transaction.amount) * cost_per_share
+
+
+class PerShareParameters(object):
+    min_trade_cost = 5.0  # 最低手续费5元
+    cost_per_unit = 0.0003         # 手续费率为万分之3，包括佣金和交易规费，券商收取
+    tax = 0.001           # 印花税为千分之1，交易所代收
+    transfer = 0.00002    # 过户费，万分之0.2，交易所收取。目前仅沪市收取过户费。深市不收取
+
+    def __init__(self, cost_per_unit=0.0003, tax=0.001, transfer=0.00002, min_trade_cost=5.0):
+        self.min_trade_cost = min_trade_cost
+        self.cost_per_unit = cost_per_unit
+        self.tax = tax
+        self.transfer = transfer
+
+    def __repr__(self):
+        return (
+            '{class_name}(cost={cost}, '
+            'tax={tax},'
+            'transfer={transfer},'
+            'min_trade_cost={min_trade_cost})'
+                .format(
+                class_name=self.__class__.__name__,
+                cost=self.cost_per_unit, tax=self.tax, transfer=self.transfer,
+                min_trade_cost=self.min_trade_cost,
+            )
+        )
+
+class CnPerShare(EquityCommissionModel):
+    """
+    中国股市手续费模型
+    Calculates a commission for a transaction based on a per share cost with
+    an optional minimum cost per trade.
+
+    Parameters
+    ----------
+    cost : float, optional
+        The amount of commissions paid per share traded.
+    min_trade_cost : float, optional
+        The minimum amount of commissions paid per trade.
+    """
+    buy = PerShareParameters(tax=0)
+    sell = PerShareParameters()
+
+    def __init__(self, buy=None, sell=None):
+        if buy is not None:
+            self.buy = buy
+        if sell is not None:
+            self.sell = sell
+
+    def __repr__(self):
+        return (
+            '{class_name}(buy={buy}, '
+            'sell={sell})'
+            .format(
+                class_name=self.__class__.__name__,
+                buy=self.buy,
+                sell=self.sell,
+            )
+        )
+
+    def _calc(self, order, transaction, params):
+        """
+
+        :param order:
+        :type order: zipline.api.Order
+        :param transaction:
+        :type transaction: zipline.api.Transaction
+        :param params:
+        :type params: PerShareParameters
+        :return:
+        """
+        additional_commission = abs(transaction.amount * transaction.price * params.cost_per_unit)
+        additional_cost = transaction.amount * transaction.price * params.tax
+        if order.sid.sid >= 600000:
+            additional_cost += transaction.amount * transaction.price * params.transfer
+        if order.commission == 0:
+            # no commission paid yet, pay at least the minimum plus a one-time
+            # exchange fee.
+            order.filled_amount = abs(transaction.amount * transaction.price)
+            return max(params.min_trade_cost, additional_commission) + additional_cost
+        else:
+            # we've already paid some commission, so figure out how much we
+            # would be paying if we only counted per unit.
+
+            per_unit_total = order.filled_amount * params.tax
+            if order.sid.sid >= 600000:
+                per_unit_total += order.filled * params.transfer
+            last_commission = order.filled_amount * params.cost_per_unit
+            order.filled_amount += abs(transaction.amount * transaction.price)
+            if last_commission + additional_commission > params.min_trade_cost:
+                per_unit_total += last_commission + additional_commission
+            else:
+                per_unit_total += params.min_trade_cost
+
+            return per_unit_total - order.commission + additional_cost
+
+    def _cal_buy(self, order, transaction):
+        return self._calc(order, transaction, self.buy)
+
+    def _cal_sell(self, order, transaction):
+        return self._calc(order, transaction, self.sell)
+    
+    def calculate(self, order, transaction):
+        if order.amount > 0:
+            return self._cal_buy(order, transaction)
+        else:
+            return self._cal_sell(order, transaction)

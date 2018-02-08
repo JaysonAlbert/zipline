@@ -128,6 +128,7 @@ class Order(Event):
             'limit',
             'id',
             'filled',
+            'filled_amount',  # filled amount
             'commission',
             'stop_reached',
             'limit_reached',

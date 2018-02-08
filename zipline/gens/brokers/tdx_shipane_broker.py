@@ -140,8 +140,8 @@ class TdxShipaneBroker(TdxBroker):
         if zp_order_id in self.orders:
             return self._orders[zp_order_id]
 
-        if isinstance(order, list):  # handle rpc response for namedtuple object
-            order = TdxOrder(*order)
+        if isinstance(order_id, list):  # handle rpc response for namedtuple object
+            order = TdxOrder(*order_id)
         self._orders[zp_order_id] = self.tdx_order_to_zipline_order(order)
         return self._orders[zp_order_id]
 

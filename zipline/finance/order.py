@@ -42,12 +42,12 @@ class Order(object):
     # using __slots__ to save on memory usage.  Simulations can create many
     # Order objects and we keep them all in memory, so it's worthwhile trying
     # to cut down on the memory footprint of this object.
-    __slots__ = ["id", "dt", "reason", "created", "asset", "amount", "filled",
+    __slots__ = ["id", "dt", "reason", "created", "asset", "amount", "filled", "filled_amount",
                  "commission", "_status", "stop", "limit", "stop_reached",
                  "limit_reached", "direction", "type", "broker_order_id"]
 
     @expect_types(asset=Asset)
-    def __init__(self, dt, asset, amount, stop=None, limit=None, filled=0,
+    def __init__(self, dt, asset, amount, stop=None, limit=None, filled=0, filled_amount = 0,
                  commission=0, id=None):
         """
         @dt - datetime.datetime that the order was placed
@@ -66,6 +66,7 @@ class Order(object):
         self.asset = asset
         self.amount = amount
         self.filled = filled
+        self.filled_amount = filled_amount
         self.commission = commission
         self._status = ORDER_STATUS.OPEN
         self.stop = stop

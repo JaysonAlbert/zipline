@@ -121,18 +121,18 @@ SQLITE_STOCK_DIVIDEND_PAYOUT_COLUMN_DTYPES = {
     'payment_sid': integer,
     'ratio': float,
 }
-UINT32_MAX = iinfo(uint32).max
+INT64_MAX = iinfo(int64).max
 
 
-def check_uint32_safe(value, colname):
-    if value >= UINT32_MAX:
+def check_int64_safe(value, colname):
+    if value >= INT64_MAX:
         raise ValueError(
             "Value %s from column '%s' is too large" % (value, colname)
         )
 
 
 @expect_element(invalid_data_behavior={'warn', 'raise', 'ignore'})
-def winsorise_uint32(df, invalid_data_behavior, column, *columns):
+def winsorise_int64(df, invalid_data_behavior, column, *columns):
     """Drops any record where a value would not fit into a uint32.
 
     Parameters
@@ -150,7 +150,7 @@ def winsorise_uint32(df, invalid_data_behavior, column, *columns):
         ``df`` with values that do not fit into a uint32 zeroed out.
     """
     columns = list((column,) + columns)
-    mask = df[columns] > UINT32_MAX
+    mask = df[columns] > INT64_MAX
 
     if invalid_data_behavior != 'ignore':
         mask |= df[columns].isnull()
@@ -315,7 +315,7 @@ class BcolzDailyBarWriter(object):
 
         # Maps column name -> output carray.
         columns = {
-            k: carray(array([], dtype=uint32))
+            k: carray(array([], dtype=int64))
             for k in US_EQUITY_PRICING_BCOLZ_COLUMNS
         }
 
@@ -342,7 +342,7 @@ class BcolzDailyBarWriter(object):
                     # We know what the content of this column is, so don't
                     # bother reading it.
                     columns['id'].append(
-                        full((nrows,), asset_id, dtype='uint32'),
+                        full((nrows,), asset_id, dtype='int64'),
                     )
                     continue
 
@@ -438,12 +438,12 @@ class BcolzDailyBarWriter(object):
             return raw_data
         if raw_data is None or raw_data.empty:
             return raw_data
-        winsorise_uint32(raw_data, invalid_data_behavior, 'volume', *OHLC)
-        processed = (raw_data[list(OHLC)] * 1000).astype('uint32')
+        winsorise_int64(raw_data, invalid_data_behavior, 'volume', *OHLC)
+        processed = (raw_data[list(OHLC)] * 1000).astype('int64')
         dates = raw_data.index.values.astype('datetime64[s]')
-        check_uint32_safe(dates.max().view(np.int64), 'day')
-        processed['day'] = dates.astype('uint32')
-        processed['volume'] = raw_data.volume.astype('uint32')
+        check_int64_safe(dates.max().view(np.int64), 'day')
+        processed['day'] = dates.astype('int64')
+        processed['volume'] = raw_data.volume.astype('int64')
         return ctable.fromdataframe(processed)
 
 

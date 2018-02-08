@@ -8,7 +8,7 @@ from bcolz import ctable
 from zipline.data.us_equity_pricing import (
     BcolzDailyBarWriter,
     OHLC,
-    UINT32_MAX
+    INT64_MAX
 )
 
 
@@ -44,7 +44,7 @@ class DailyBarWriterFromDataFrames(BcolzDailyBarWriter):
 
     @staticmethod
     def check_uint_safe(value, colname):
-        if value >= UINT32_MAX:
+        if value >= INT64_MAX:
             raise ValueError(
                 "Value %s from column '%s' is too large" % (value, colname)
             )

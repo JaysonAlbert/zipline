@@ -77,7 +77,7 @@ def fetch_single_equity(engine, symbol, start=None, end=None, freq='1d'):
     mask = df['high'] * df['vol'] >= df['amount'] / 10 # handle vol * 100 share
     df.loc[~mask,'vol'] = df['vol'] * 100
 
-    df['volume'] = df['vol'].astype(np.int32)
+    df['volume'] = df['vol'].astype(np.int64)
 
     if freq == '1d':
         df['id'] = int(symbol)

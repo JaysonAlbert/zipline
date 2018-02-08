@@ -39,7 +39,7 @@ from zipline.data._minute_bar_internal import (
 from zipline.gens.sim_engine import NANOS_IN_MINUTE
 
 from zipline.data.bar_reader import BarReader, NoDataOnDate
-from zipline.data.us_equity_pricing import check_uint32_safe
+from zipline.data.us_equity_pricing import check_int64_safe
 from zipline.utils.calendars import get_calendar
 from zipline.utils.cli import maybe_show_progress
 from zipline.utils.memoize import lazyval
@@ -147,7 +147,7 @@ def convert_cols(cols, scale_factor, sid, invalid_data_behavior):
         max_val = scaled_col.max()
 
         try:
-            check_uint32_safe(max_val, col_name)
+            check_int64_safe(max_val, col_name)
         except ValueError:
             if invalid_data_behavior == 'raise':
                 raise
@@ -161,14 +161,14 @@ def convert_cols(cols, scale_factor, sid, invalid_data_behavior):
 
             # We want to exclude all rows that have an unsafe value in
             # this column.
-            exclude_mask &= (scaled_col >= np.iinfo(np.uint32).max)
+            exclude_mask &= (scaled_col >= np.iinfo(np.int64).max)
 
     # Convert all cols to uint32.
-    opens = scaled_opens.astype(np.uint32)
-    highs = scaled_highs.astype(np.uint32)
-    lows = scaled_lows.astype(np.uint32)
-    closes = scaled_closes.astype(np.uint32)
-    volumes = cols['volume'].astype(np.uint32)
+    opens = scaled_opens.astype(np.int64)
+    highs = scaled_highs.astype(np.int64)
+    lows = scaled_lows.astype(np.int64)
+    closes = scaled_closes.astype(np.int64)
+    volumes = cols['volume'].astype(np.int64)
 
     # Exclude rows with unsafe values by setting to zero.
     opens[exclude_mask] = 0
@@ -572,7 +572,7 @@ class BcolzMinuteBarWriter(object):
         if not os.path.exists(sid_containing_dirname):
             # Other sids may have already created the containing directory.
             os.makedirs(sid_containing_dirname)
-        initial_array = np.empty(0, np.uint32)
+        initial_array = np.empty(0, np.int64)
         table = ctable(
             rootdir=path,
             columns=[
@@ -609,7 +609,7 @@ class BcolzMinuteBarWriter(object):
         minute_offset = len(table) % self._minutes_per_day
         num_to_prepend = numdays * self._minutes_per_day - minute_offset
 
-        prepend_array = np.zeros(num_to_prepend, np.uint32)
+        prepend_array = np.zeros(num_to_prepend, np.int64)
         # Fill all OHLCV with zeros.
         table.append([prepend_array] * 5)
         table.flush()
@@ -818,11 +818,11 @@ class BcolzMinuteBarWriter(object):
 
         minutes_count = all_minutes_in_window.size
 
-        open_col = np.zeros(minutes_count, dtype=np.uint32)
-        high_col = np.zeros(minutes_count, dtype=np.uint32)
-        low_col = np.zeros(minutes_count, dtype=np.uint32)
-        close_col = np.zeros(minutes_count, dtype=np.uint32)
-        vol_col = np.zeros(minutes_count, dtype=np.uint32)
+        open_col = np.zeros(minutes_count, dtype=np.int64)
+        high_col = np.zeros(minutes_count, dtype=np.int64)
+        low_col = np.zeros(minutes_count, dtype=np.int64)
+        close_col = np.zeros(minutes_count, dtype=np.int64)
+        vol_col = np.zeros(minutes_count, dtype=np.int64)
 
         dt_ixs = np.searchsorted(all_minutes_in_window.values,
                                  dts.astype('datetime64[ns]'))
@@ -1254,7 +1254,7 @@ class BcolzMinuteBarReader(MinuteBarReader):
             if field != 'volume':
                 out = np.full(shape, np.nan)
             else:
-                out = np.zeros(shape, dtype=np.uint32)
+                out = np.zeros(shape, dtype=np.int64)
 
             for i, sid in enumerate(sids):
                 carray = self._open_minute_file(field, sid)
