@@ -37,6 +37,7 @@ log = Logger("TDX Broker")
 
 
 class TdxBroker(Broker):
+    _time_skew = pd.Timedelta('1 S')
     def __init__(self, tdx_uri, account_id=None):
 
         self._orders = {}
@@ -138,7 +139,11 @@ class TdxBroker(Broker):
 
     @property
     def time_skew(self):
-        return pd.Timedelta('1 S')
+        return self._time_skew
+
+    @time_skew.setter
+    def time_skew(self, time_skew):
+        self._time_skew = time_skew
 
     def order(self, asset, amount, style):
         code = asset.symbol
