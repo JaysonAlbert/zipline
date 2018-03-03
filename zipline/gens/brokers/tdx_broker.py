@@ -29,8 +29,9 @@ import numpy as np
 import zerorpc
 import platform
 from zipline.errors import SymbolNotFound
+from six import PY2
 
-if platform.architecture()[0] == '32bit':
+if platform.architecture()[0] == '32bit' and PY2:
     from zipline.gens.tdx_client import TdxClient
 
 log = Logger("TDX Broker")
@@ -43,7 +44,7 @@ class TdxBroker(Broker):
         if tdx_uri.startswith('tcp'):
             self._client = zerorpc.Client()
             self._client.connect(tdx_uri)
-        elif platform.architecture()[0] == '32bit':
+        elif platform.architecture()[0] == '32bit' and PY2:
             self._client = TdxClient(tdx_uri)
             self._client.login()
         else:

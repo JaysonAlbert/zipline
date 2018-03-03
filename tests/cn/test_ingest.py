@@ -39,7 +39,7 @@ def test_target_ingest():
 
 # ingest('tdx', "ETF.csv", True, pd.to_datetime('20170101', utc=True), True)
 logbook.StderrHandler().push_application()
-ingest('tdx', "", True, show_progress=True)
+ingest('tdx', "rq_mongodb.csv", True, show_progress=True)
 
 # if __name__ == '__main__':
 #     from tdx.engine import AsyncEngine

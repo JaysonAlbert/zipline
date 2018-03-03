@@ -1804,13 +1804,13 @@ class TradingAlgorithm(object):
                                             method='set_symbol_lookup_date')
 
     @api_method
-    def query(self,*args,**kwargs):
+    def query(self, *args, **kwargs):
         if self.fundamental_reader:
             return self.fundamental_reader.query(self.datetime,*args,**kwargs)
 
     @api_method
-    def get_fundamental(self,query):
-        return self.fundamental_reader.get_fundamental(query)
+    def get_fundamental(self, query, entry_date=None, interval='1d', report_quarter=False):
+        return self.fundamental_reader.get_fundamental(query, entry_date, interval, report_quarter)
 
     @api_method
     def get_shares(self, assets, bar_count=1, end_dt=None, fields=None):

@@ -1,4 +1,4 @@
-from tdx.engine import Engine, AsyncEngine
+from tdx.engine import Engine, AsyncEngine, RQEngine
 import pandas as pd
 from collections import OrderedDict
 import numpy as np
@@ -226,10 +226,12 @@ def tdx_bundle(assets,
                cache,
                show_progress,
                output_dir):
-    eg = Engine(auto_retry=True, multithread=True, best_ip=True, thread_num=1, raise_exception=True)
+    eg = Engine(heartbeat=True, auto_retry=True, multithread=True, best_ip=True, thread_num=1, raise_exception=True)
     eg.connect()
 
-    aeg = AsyncEngine(ip='180.153.18.171', auto_retry=True, raise_exception=True)
+    # aeg = AsyncEngine(ip='202.108.253.131', auto_retry=True, raise_exception=True, heartbeat=True)
+    aeg = RQEngine(db_host="192.168.0.114", db_port=27016, ip='180.153.18.170', auto_retry=True, raise_exception=True)
+
     aeg.connect()
 
     symbols = fetch_symbols(eg, assets)
@@ -308,6 +310,7 @@ def tdx_bundle(assets,
 
         func = partial(fetch_single_equity, eg)
 
+        # func = partial(async_fetch_single_euqity, aeg)
         if freq == '1m':
             if distance >= 100:
                 func = aeg.get_k_data
@@ -341,17 +344,15 @@ def tdx_bundle(assets,
                     data.index = pd.to_datetime(data.index)
 
                     if end.tz_localize(None) != data.index[-1]:
-                        emptyData = pd.DataFrame.from_records([{
-                            'id': int(symbol),
-                            'day': end.tz_localize(None),
-                            'open': 0.0,
-                            'high': 0.0,
-                            'low': 0.0,
-                            'close': 0.0,
-                            'volume': 0,
-                        }], index='day')
-                        data.append(emptyData)
-                        emptyData.to_sql(SESSION_BAR_TABLE, session_bars.connect(), if_exists='append', index_label='day')
+                        index = data.index[-1]
+                        data = reindex_to_calendar(
+                            calendar,
+                            data,
+                            start_session=start, end_session=end,
+                            freq=freq,
+                        )
+                        data_to_write = data[data.index > index]
+                        data_to_write.to_sql(SESSION_BAR_TABLE, session_bars.connect(), if_exists='append', index_label='day')
                     yield int(symbol), data
                     continue
 

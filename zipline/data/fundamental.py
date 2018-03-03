@@ -13,7 +13,7 @@ from sqlalchemy.orm import (
     Query,
 )
 from toolz import first
-from .schema import (
+from zipline.data.schema import (
     full,
     fundamental,
     Base
@@ -22,6 +22,7 @@ import pandas as pd
 import click
 from zipline.utils.preprocess import preprocess
 from zipline.utils.sqlite_utils import coerce_string_to_eng
+import pandas as pd
 
 logger = Logger("fundamental")
 
@@ -99,12 +100,90 @@ class FundamentalReader(object):
 
     def query(self, dt, *args, **kwargs):
         args = list(args) + [fundamental.code, func.max(fundamental.report_date).label('report_date')]
-        return Query(args).with_session(self.session).filter(
-            fundamental.report_date < dt
-        )
+        # return Query(args).with_session(self.session).filter(
+        #     fundamental.report_date < dt
+        # )
+        return Query(args).with_session(self.session)
 
-    def get_fundamental(self, query):
+    def get_fundamental(self, query, entry_date=None, interval='1d', report_quarter=False):
+        # params check
+        if not entry_date:
+            entry_date = pd.Timestamp('now').normalize() - pd.Timedelta('1d')
+        if isinstance(entry_date, str):
+            entry_date = pd.Timestamp(entry_date)
+
+        num, type = self._parse_inerval(interval)
+
+        if report_quarter:
+            query = query.add_column(fundamental.report_quarter)
+
+        # fetch date
+        rtn = dict()
+        first_record = pd.DataFrame(
+            query.filter(fundamental.report_date <= entry_date).group_by(fundamental.code).all()
+        )
+        first_record.index = first_record['code']
+        first_record = first_record.drop(['code', 'report_date'], axis=1).T
+        if num == 1:
+            return first_record
+        elif type == 'd' or type == 'm':
+            rtn[str(entry_date.date())] = first_record
+            for i in range(num - 1):
+                delta = '1d'
+                if type == 'm':
+                    delta = '30d'
+                entry_date = entry_date - pd.Timedelta(delta)
+                res = pd.DataFrame(
+                    query.filter(fundamental.report_date <= entry_date).group_by(fundamental.code).all()
+                )
+                res.index = res['code']
+                res = res.drop(['code', 'report_date'], axis=1).T
+                # 返回空数据
+                # if len(res):
+                rtn[str(entry_date.date())] = res
+            return pd.Panel(rtn).swapaxes(0, 1)
+        elif type == 'q' or type == 'y':
+            rtn[str(entry_date.date())] = first_record
+            report_quarter = first_record.loc['report_quarter'].iloc[0]
+            for i in range(num - 1):
+                report_quarter, entry_date = self._get_last_report_quarter(type, entry_date, report_quarter)
+                res = pd.DataFrame(
+                    query.filter(fundamental.report_quarter == report_quarter).group_by(fundamental.code).all()
+                )
+                res.index = res['code']
+                res = res.drop(['code'], axis=1).T
+                # 每只股票的report_date不一样，这单纯往前推1个季度或一年
+                rtn[str(entry_date.date())] = res
+            return pd.Panel(rtn).swapaxes(0, 1)
+        else:
+            raise Exception('the interval param format wrong, must be 1d, 1m, 1q, 1y, 2y etc...')
+
+
+
         return pd.DataFrame(query.group_by(fundamental.code).all())
+
+    def _parse_inerval(self, interval):
+        type = interval[-1]
+        num = int(interval[:-1])
+        return num, type
+
+    def _get_last_report_quarter(self, type, entry_date, report_quarter):
+        if type == 'q':
+            report_list = ['年报', '三季报', '中报', '一季报']
+            index = 0
+            for i in range(len(report_list)):
+                if report_quarter.find(report_list[i]) != -1:
+                    index = i + 1
+                    break
+            year = entry_date.year - index % len(report_list)
+            entry_date = entry_date - pd.Timedelta('90d')
+            return "%d年%s" % (year, report_list[index]), entry_date
+        elif type == 'y':
+            year = entry_date.year - 1
+            entry_date = entry_date - pd.Timedelta('365d')
+            return "%d年%s" % (year, '年报'), entry_date
+
+
 
 
 class FundamentalWriter(object):
@@ -168,3 +247,8 @@ if __name__ == '__main__':
     # writer = FundamentalWriter(engine)
     # writer.fill()
     sql_query()
+
+    # engine = create_engine("sqlite:///fundamental.sqlite")
+    # fr = FundamentalReader(engine)
+    # q = fr.query(20150101)
+    # fr.get_fundamental(q)
