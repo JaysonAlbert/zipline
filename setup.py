@@ -279,7 +279,7 @@ conditional_arguments = {
 }
 
 setup(
-    name='cn-zipline-live',
+    name='cn-zipline-live-async',
     url="https://github.com/JaysonAlbert/zipline",
     version=versioneer.get_version(),
     cmdclass=LazyBuildExtCommandClass(versioneer.get_cmdclass()),
