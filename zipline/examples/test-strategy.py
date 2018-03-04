@@ -38,7 +38,9 @@ def initialize(context):
         fundamental.net_profit)
 
     indicator_dataframe = get_fundamental(indicator_query)
-    print(indicator_dataframe.loc['gross_profit_margin'])
+    dp4 = get_fundamental(query(fundamental.cash_and_cash_equivalent), date,
+                          '2y')
+    print(dp4)
 
 
 def handle_data(context, data):

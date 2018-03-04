@@ -114,20 +114,19 @@ class FundamentalReader(object):
 
         num, type = self._parse_inerval(interval)
 
-        if report_quarter:
-            query = query.add_column(fundamental.report_quarter)
+        # 增加report_quarter列
+        query = query.add_column(fundamental.report_quarter)
 
         # fetch date
         rtn = dict()
         first_record = pd.DataFrame(
             query.filter(fundamental.report_date <= entry_date).group_by(fundamental.code).all()
         )
-        first_record.index = first_record['code']
-        first_record = first_record.drop(['code', 'report_date'], axis=1).T
         if num == 1:
+            first_record = self._format_data(first_record, report_quarter)
             return first_record
         elif type == 'd' or type == 'm':
-            rtn[str(entry_date.date())] = first_record
+            rtn[str(entry_date.date())] = self._format_data(first_record, report_quarter)
             for i in range(num - 1):
                 delta = '1d'
                 if type == 'm':
@@ -136,31 +135,34 @@ class FundamentalReader(object):
                 res = pd.DataFrame(
                     query.filter(fundamental.report_date <= entry_date).group_by(fundamental.code).all()
                 )
-                res.index = res['code']
-                res = res.drop(['code', 'report_date'], axis=1).T
-                # 返回空数据
-                # if len(res):
-                rtn[str(entry_date.date())] = res
+                rtn[str(entry_date.date())] = self._format_data(res, report_quarter)
             return pd.Panel(rtn).swapaxes(0, 1)
         elif type == 'q' or type == 'y':
-            rtn[str(entry_date.date())] = first_record
-            report_quarter = first_record.loc['report_quarter'].iloc[0]
+            first_record.index = first_record['code']
+            first_record = first_record.drop(['code', 'report_date'], axis=1)
+            report_quarter_str = first_record.T.loc['report_quarter'].iloc[0]
+            if not report_quarter:
+                first_record = first_record.drop(['report_quarter'], axis=1)
+            rtn[str(entry_date.date())] = first_record.T
+
             for i in range(num - 1):
-                report_quarter, entry_date = self._get_last_report_quarter(type, entry_date, report_quarter)
+                report_quarter_str, entry_date = self._get_last_report_quarter(type, entry_date, report_quarter_str)
                 res = pd.DataFrame(
-                    query.filter(fundamental.report_quarter == report_quarter).group_by(fundamental.code).all()
+                    query.filter(fundamental.report_quarter == report_quarter_str).group_by(fundamental.code).all()
                 )
-                res.index = res['code']
-                res = res.drop(['code'], axis=1).T
-                # 每只股票的report_date不一样，这单纯往前推1个季度或一年
-                rtn[str(entry_date.date())] = res
+                # 每只股票的report_date不一样，这单纯往前推90天或365天
+                rtn[str(entry_date.date())] = self._format_data(res, report_quarter)
             return pd.Panel(rtn).swapaxes(0, 1)
         else:
             raise Exception('the interval param format wrong, must be 1d, 1m, 1q, 1y, 2y etc...')
 
-
-
-        return pd.DataFrame(query.group_by(fundamental.code).all())
+    def _format_data(self, df, report_quarter=False, first=True):
+        df.index = df['code']
+        df = df.drop(['code', 'report_date'], axis=1)
+        if not report_quarter:
+            df = df.drop(['report_quarter'], axis=1)
+        df = df.T
+        return df
 
     def _parse_inerval(self, interval):
         type = interval[-1]
