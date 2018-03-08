@@ -1094,6 +1094,14 @@ class TradingAlgorithm(object):
         )
 
     @api_method
+    @expect_types(num=int)
+    @expect_types(cols=list)
+    def register_fundamental_data(self, num=1, cols=[]):
+        self.fundamental_data = pd.Panel()
+        self.fundamental_num = num
+        self.fundamental_cols = cols
+
+    @api_method
     def schedule_function(self,
                           func,
                           date_rule=None,
@@ -1811,6 +1819,14 @@ class TradingAlgorithm(object):
     @api_method
     def get_fundamental(self, query, entry_date=None, interval='1d', report_quarter=False):
         return self.fundamental_reader.get_fundamental(query, entry_date, interval, report_quarter)
+
+    @api_method
+    def update_fundamental_data(self):
+        self.fundamental_reader.update_fundamental_data(
+            self.fundamental_num,
+            self.fundamental_cols,
+            self.get_datetime()
+        )
 
     @api_method
     def get_shares(self, assets, bar_count=1, end_dt=None, fields=None):

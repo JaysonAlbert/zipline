@@ -27,7 +27,7 @@ def initialize(context):
     date = date.strftime("%Y-%m-%d")
     dp = get_fundamental(
         query(fundamental.gross_profit_margin, fundamental.net_profit), date,
-        '2y', report_quarter=True)
+        '2q', report_quarter=True)
 
     indicator_query = query(
         fundamental.gross_profit_margin,
@@ -39,7 +39,11 @@ def initialize(context):
 
     indicator_dataframe = get_fundamental(indicator_query)
     dp4 = get_fundamental(query(fundamental.cash_and_cash_equivalent), date,
-                          '2y')
+                          '2q')
+    # 全局变量 context.fundamental_data (type pd.panel)
+    # 用 schedule_function初始化 context.fundamental_data，并run daily: update_fundamental_data()
+    # register_fundamental_data(num=4, cols=['code', 'report_date'])
+    #
     print(dp4)
 
 

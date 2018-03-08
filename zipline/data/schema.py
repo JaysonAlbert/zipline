@@ -176,5 +176,5 @@ class fundamental(Base):
     long_term_equity_investment = Column(Float)
     non_current_liabilities = Column(Float)
     non_recurring_profit_and_loss = Column(Float)
-    report_quarter = Column(String)
+    quarter = Column(String)
     code = Column(String, primary_key=True)

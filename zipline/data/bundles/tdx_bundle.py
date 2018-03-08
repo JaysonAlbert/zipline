@@ -256,6 +256,8 @@ def tdx_bundle(assets,
     if calendar.all_sessions[end_idx] > end:
         end = calendar.all_sessions[end_idx - 1]
 
+    # //TODO 这个end为了测试用
+    end = pd.to_datetime('20180228', utc=True)
     error_list = []
 
     first = True
@@ -371,6 +373,8 @@ def tdx_bundle(assets,
                         "select * from {} where id = {} order by day ASC ".format(SESSION_BAR_TABLE, int(symbol)),
                         session_bars, index_col='day')
                     data.index = pd.to_datetime(data.index)
+            if freq == '1m' and data is None:
+                continue
             dates_json[freq][symbol] = data.index[-1].strftime('%Y%m%d')
             yield int(symbol), data
 

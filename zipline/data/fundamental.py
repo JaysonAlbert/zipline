@@ -115,7 +115,7 @@ class FundamentalReader(object):
         num, type = self._parse_inerval(interval)
 
         # 增加report_quarter列
-        query = query.add_column(fundamental.report_quarter)
+        query = query.add_column(fundamental.quarter)
 
         # fetch date
         rtn = dict()
@@ -140,15 +140,15 @@ class FundamentalReader(object):
         elif type == 'q' or type == 'y':
             first_record.index = first_record['code']
             first_record = first_record.drop(['code', 'report_date'], axis=1)
-            report_quarter_str = first_record.T.loc['report_quarter'].iloc[0]
+            report_quarter_str = first_record.T.loc['quarter'].iloc[0]
             if not report_quarter:
-                first_record = first_record.drop(['report_quarter'], axis=1)
+                first_record = first_record.drop(['quarter'], axis=1)
             rtn[str(entry_date.date())] = first_record.T
 
             for i in range(num - 1):
                 report_quarter_str, entry_date = self._get_last_report_quarter(type, entry_date, report_quarter_str)
                 res = pd.DataFrame(
-                    query.filter(fundamental.report_quarter == report_quarter_str).group_by(fundamental.code).all()
+                    query.filter(fundamental.quarter == report_quarter_str).group_by(fundamental.code).all()
                 )
                 # 每只股票的report_date不一样，这单纯往前推90天或365天
                 rtn[str(entry_date.date())] = self._format_data(res, report_quarter)
@@ -156,11 +156,11 @@ class FundamentalReader(object):
         else:
             raise Exception('the interval param format wrong, must be 1d, 1m, 1q, 1y, 2y etc...')
 
-    def _format_data(self, df, report_quarter=False, first=True):
+    def _format_data(self, df, report_quarter=False):
         df.index = df['code']
         df = df.drop(['code', 'report_date'], axis=1)
         if not report_quarter:
-            df = df.drop(['report_quarter'], axis=1)
+            df = df.drop(['quarter'], axis=1)
         df = df.T
         return df
 
@@ -177,7 +177,8 @@ class FundamentalReader(object):
                 if report_quarter.find(report_list[i]) != -1:
                     index = i + 1
                     break
-            year = entry_date.year - index % len(report_list)
+            # 根据report_quarter算出年
+            year = int(report_quarter[:4]) - int(index / len(report_list))
             entry_date = entry_date - pd.Timedelta('90d')
             return "%d年%s" % (year, report_list[index]), entry_date
         elif type == 'y':
@@ -185,8 +186,13 @@ class FundamentalReader(object):
             entry_date = entry_date - pd.Timedelta('365d')
             return "%d年%s" % (year, '年报'), entry_date
 
-
-
+    def update_fundamental_data(self, num, cols, date):
+        query = self.query()
+        for name in cols:
+            query = query.add_column(name)
+        res = pd.DataFrame(
+            query.filter(fundamental.report_date == date).group_by(fundamental.code).all()
+        )
 
 class FundamentalWriter(object):
     table_names = ['fundamental', 'full']
