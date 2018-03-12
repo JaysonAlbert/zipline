@@ -186,13 +186,6 @@ class FundamentalReader(object):
             entry_date = entry_date - pd.Timedelta('365d')
             return "%d年%s" % (year, '年报'), entry_date
 
-    def update_fundamental_data(self, num, cols, date):
-        query = self.query()
-        for name in cols:
-            query = query.add_column(name)
-        res = pd.DataFrame(
-            query.filter(fundamental.report_date == date).group_by(fundamental.code).all()
-        )
 
 class FundamentalWriter(object):
     table_names = ['fundamental', 'full']

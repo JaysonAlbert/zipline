@@ -25,20 +25,8 @@ def initialize(context):
     # schedule_function(rebalance, date_rule=date_rules.every_day(), time_rule=time_rules.market_open(minutes=140))
     date = get_datetime() - timedelta(days=3)  # 上市10天以后的股票
     date = date.strftime("%Y-%m-%d")
-    dp = get_fundamental(
-        query(fundamental.gross_profit_margin, fundamental.net_profit), date,
-        '2q', report_quarter=True)
 
-    indicator_query = query(
-        fundamental.gross_profit_margin,
-        fundamental.return_on_asset_net_profit,
-        fundamental.earnings_per_share,
-        fundamental.cash_and_cash_equivalent,
-        fundamental.revenue,
-        fundamental.net_profit)
-
-    indicator_dataframe = get_fundamental(indicator_query)
-    dp4 = get_fundamental(query(fundamental.cash_and_cash_equivalent), date,
+    dp4 = get_fundamental(query(fundamental.report_date), date,
                           '2q')
     # 全局变量 context.fundamental_data (type pd.panel)
     # 用 schedule_function初始化 context.fundamental_data，并run daily: update_fundamental_data()
