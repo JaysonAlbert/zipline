@@ -1,4 +1,4 @@
-from tdx.engine import Engine, AsyncEngine, RQEngine
+from tdx.engine import Engine, AsyncEngine
 import pandas as pd
 from collections import OrderedDict
 import numpy as np
@@ -230,7 +230,6 @@ def tdx_bundle(assets,
     eg.connect()
 
     aeg = AsyncEngine(ip='202.108.253.131', auto_retry=True, raise_exception=True, heartbeat=True)
-
     aeg.connect()
 
     symbols = fetch_symbols(eg, assets)
