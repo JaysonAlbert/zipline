@@ -229,8 +229,7 @@ def tdx_bundle(assets,
     eg = Engine(heartbeat=True, auto_retry=True, multithread=True, best_ip=True, thread_num=1, raise_exception=True)
     eg.connect()
 
-    # aeg = AsyncEngine(ip='202.108.253.131', auto_retry=True, raise_exception=True, heartbeat=True)
-    aeg = RQEngine(db_host="192.168.0.114", db_port=27016, ip='180.153.18.170', auto_retry=True, raise_exception=True)
+    aeg = AsyncEngine(ip='202.108.253.131', auto_retry=True, raise_exception=True, heartbeat=True)
 
     aeg.connect()
 
@@ -399,6 +398,7 @@ def tdx_bundle(assets,
     symbols= symbols[~symbols.symbol.isin(error_list)]
 
     if not is_daily_updated:
+        eg.connect()
         splits, dividends, shares = fetch_splits_and_dividends(eg, symbols, start_session, end_session)
         metas = pd.read_sql("select id as symbol,min(day) as start_date,max(day) as end_date from bars group by id;",
                             session_bars,
@@ -422,6 +422,7 @@ def tdx_bundle(assets,
 
 
     if ingest_minute:
+        aeg.connect()
         with click.progressbar(
                 gen_symbols_data(symbols.symbol, freq="1m"),
                 label="Merging minute equity files:",
