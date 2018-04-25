@@ -26,7 +26,6 @@ import pandas as pd
 
 logger = Logger("fundamental")
 
-
 def retry(times=3):
     def wrapper(func):
         @wraps(func)
@@ -97,6 +96,7 @@ class FundamentalReader(object):
     def __init__(self, engine):
         self.engine = engine
         self.session = sessionmaker(bind=self.engine)()
+        self.qydf_list = None
 
     def query(self, dt, *args, **kwargs):
         args = list(args) + [fundamental.code, func.max(fundamental.report_date).label('report_date')]
@@ -109,10 +109,13 @@ class FundamentalReader(object):
         # params check
         if not entry_date:
             entry_date = pd.Timestamp('now').normalize() - pd.Timedelta('1d')
-        if isinstance(entry_date, str):
-            entry_date = pd.Timestamp(entry_date)
+            entry_date = entry_date.date()
+        elif isinstance(entry_date, str):
+            entry_date = pd.Timestamp(entry_date).date()
+        elif isinstance(entry_date, pd.tslib.Timestamp):
+            entry_date = entry_date.date()
 
-        num, type = self._parse_inerval(interval)
+        num, category = self._parse_inerval(interval)
 
         # 增加report_quarter列
         query = query.add_column(fundamental.quarter)
@@ -125,38 +128,58 @@ class FundamentalReader(object):
         if num == 1:
             first_record = self._format_data(first_record, report_quarter)
             return first_record
-        elif type == 'd' or type == 'm':
-            rtn[str(entry_date.date())] = self._format_data(first_record, report_quarter)
+        elif category == 'd' or category == 'm':
+            rtn[str(entry_date)] = self._format_data(first_record, report_quarter)
             for i in range(num - 1):
                 delta = '1d'
-                if type == 'm':
+                if category == 'm':
                     delta = '30d'
                 entry_date = entry_date - pd.Timedelta(delta)
                 res = pd.DataFrame(
                     query.filter(fundamental.report_date <= entry_date).group_by(fundamental.code).all()
                 )
-                rtn[str(entry_date.date())] = self._format_data(res, report_quarter)
+                rtn[str(entry_date)] = self._format_data(res, report_quarter)
             return pd.Panel(rtn).swapaxes(0, 1)
-        elif type == 'q' or type == 'y':
+        elif category == 'q':
+            entities = self._get_query_entity(query)
+            ele = ""
+            for i in range(len(entities)):
+                ele = ele + entities[i].split('.')[-1] + ","
+            ele = ele + "code,report_date,quarter"
+
+            rtn[str(entry_date)] = self._format_data(first_record, report_quarter)
+            if self.qydf_list is None or num - 1 > len(self.qydf_list):
+                self.get_fundamental_qy(query, entry_date, interval, report_quarter)
+                return self._format_qy_data(rtn, num, ele, entry_date, report_quarter)
+            else:
+                res = pd.DataFrame(
+                    query.filter(fundamental.report_date == entry_date).group_by(fundamental.code).all()
+                )
+                if res.empty:
+                    return self._format_qy_data(rtn, num, ele, entry_date, report_quarter)
+                else:
+                    self._update_qydf_list(res)
+                    return self._format_qy_data(rtn, num, ele, entry_date, report_quarter)
+        elif category == 'y':
             first_record.index = first_record['code']
             first_record = first_record.drop(['code', 'report_date'], axis=1)
             report_quarter_str = first_record.T.loc['quarter'].iloc[0]
             if not report_quarter:
                 first_record = first_record.drop(['quarter'], axis=1)
-            rtn[str(entry_date.date())] = first_record.T
-
+            rtn[str(entry_date)] = first_record.T
             for i in range(num - 1):
-                report_quarter_str, entry_date = self._get_last_report_quarter(type, entry_date, report_quarter_str)
+                report_quarter_str, entry_date = self._get_last_report_quarter(category, entry_date, report_quarter_str)
                 res = pd.DataFrame(
                     query.filter(fundamental.quarter == report_quarter_str).group_by(fundamental.code).all()
                 )
                 # 每只股票的report_date不一样，这单纯往前推90天或365天
-                rtn[str(entry_date.date())] = self._format_data(res, report_quarter)
+                rtn[str(entry_date)] = self._format_data(res, report_quarter)
             return pd.Panel(rtn).swapaxes(0, 1)
         else:
             raise Exception('the interval param format wrong, must be 1d, 1m, 1q, 1y, 2y etc...')
 
     def _format_data(self, df, report_quarter=False):
+        df['code'] = ["{:0>6}".format(str(int(i))) for i in df['code'].tolist()]
         df.index = df['code']
         df = df.drop(['code', 'report_date'], axis=1)
         if not report_quarter:
@@ -164,13 +187,20 @@ class FundamentalReader(object):
         df = df.T
         return df
 
-    def _parse_inerval(self, interval):
-        type = interval[-1]
-        num = int(interval[:-1])
-        return num, type
+    def _format_qy_data(self, rtn, num, ele, entry_date, report_quarter):
+        for i in range(num - 1):
+            entry_date = entry_date - pd.Timedelta("90d")
+            df = self.qydf_list[i][ele.split(",")]
+            rtn[str(entry_date)] = self._format_data(df, report_quarter)
+        return pd.Panel(rtn).swapaxes(0, 1)
 
-    def _get_last_report_quarter(self, type, entry_date, report_quarter):
-        if type == 'q':
+    def _parse_inerval(self, interval):
+        category = interval[-1]
+        num = int(interval[:-1])
+        return num, category
+
+    def _get_last_report_quarter(self, category, entry_date, report_quarter):
+        if category == 'q':
             report_list = ['年报', '三季报', '中报', '一季报']
             index = 0
             for i in range(len(report_list)):
@@ -181,10 +211,62 @@ class FundamentalReader(object):
             year = int(report_quarter[:4]) - int(index / len(report_list))
             entry_date = entry_date - pd.Timedelta('90d')
             return "%d年%s" % (year, report_list[index]), entry_date
-        elif type == 'y':
+        elif category == 'y':
             year = entry_date.year - 1
             entry_date = entry_date - pd.Timedelta('365d')
             return "%d年%s" % (year, '年报'), entry_date
+
+    def _update_qydf_list(self, df_res):
+        df0 = self.qydf_list[0]
+        df0_code = df0[df0['code'] == df_res['code']]
+        mask = (df0_code['report_date'] != df_res['report_date'])
+        df_res = df_res[mask]
+        if df_res.empty is not True:
+            for i in range(len(self.qydf_list) - 2, -1, -1):
+                df = self.qydf_list[i]
+                next_df = self.qydf_list[i+1]
+                next_df[df['code'] == df_res['code']] = df[df['code'] == df_res['code']]
+                self.qydf_list[i] = df
+                self.qydf_list[i + 1] = next_df
+
+            df0[df0['code'] == df_res['code']] = df_res
+            self.qydf_list[0] = df0
+
+
+    def get_fundamental_qy(self, query, entry_date=None, interval='1d', report_quarter=False):
+        """
+        :return: type of list, len @num-1, element is type of pd.Dataframe
+        """
+        num, category = self._parse_inerval(interval)
+        rtn = []
+        # 默认取5年的长度
+        sql = "select * from fundamental where report_date <= \'%s\' " \
+              "and report_date>= \'%s\' order by code, report_date DESC" % (
+            entry_date, entry_date - pd.Timedelta('1825d')
+        )
+        df = pd.read_sql(sql, self.engine)
+        group = df.groupby('code')
+        subdfs = []
+        for i in range(1, num):
+            subdfs.append(group.apply(lambda df: self._lamdba_qy(df, i)))
+            subdfs[i - 1].dropna(how='all', inplace=True)
+        self.qydf_list = subdfs
+        return subdfs
+
+    def _lamdba_qy(self, df, num):
+        try:
+            return df.iloc[num]
+        except:
+            return
+
+    def _get_query_entity(self, query):
+        rtn = []
+        const_map = ["max(fundamental.report_date)", "fundamental.code", "fundamental.report_date",
+                     "fundamental.quarter"]
+        for entity in query._entities:
+            if str(entity) not in const_map:
+                rtn.append(str(entity))
+        return rtn
 
 
 class FundamentalWriter(object):
@@ -248,8 +330,3 @@ if __name__ == '__main__':
     # writer = FundamentalWriter(engine)
     # writer.fill()
     sql_query()
-
-    # engine = create_engine("sqlite:///fundamental.sqlite")
-    # fr = FundamentalReader(engine)
-    # q = fr.query(20150101)
-    # fr.get_fundamental(q)
