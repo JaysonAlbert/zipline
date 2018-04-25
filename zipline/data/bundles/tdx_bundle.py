@@ -1,3 +1,5 @@
+# encoding: utf-8
+
 from tdx.engine import Engine, AsyncEngine
 import pandas as pd
 from collections import OrderedDict
@@ -21,6 +23,7 @@ from os.path import join
 import os
 import json
 import datetime
+import sqlalchemy
 
 from functools import partial
 from numpy import searchsorted
@@ -196,13 +199,15 @@ def reindex_to_calendar(calendar, data, freq='1d', start_session=None, end_sessi
     end_session = end_session.normalize()
 
     # start_session must >= data.index[0], 不然会去取到NAN数据
-    if start_session.tz_localize(None) < data.index[0]:
-        start_session = data.index[0].normalize()
+    # 股票之前停牌现在开盘，data.index[0]是可能大于start_session的
+    # if start_session.tz_localize(None) < data.index[0]:
+    #     start_session = data.index[0].normalize()
 
     if freq == '1d':
         all_sessions = calendar.sessions_in_range(start_session, end_session).tz_localize(None)
         df = data.reindex(all_sessions, copy=False)
         df = fillna(df)
+        # 当第一条数据为NaN时，fillna的数据也为NaN，所以从数据库取最后一条数据来fillna
         df.id.fillna(method='pad', inplace=True)
         df.id.fillna(method="bfill", inplace=True)
         df.day = df.index.values.astype('datetime64[m]').astype(np.int64)
@@ -258,8 +263,8 @@ def tdx_bundle(assets,
     if calendar.all_sessions[end_idx] > end:
         end = calendar.all_sessions[end_idx - 1]
 
-    # //TODO 这个end为了测试用
-    end = pd.to_datetime('20180228', utc=True)
+    # //这个end为了测试用
+    # end = pd.to_datetime('20180228', utc=True)
     error_list = []
 
     first = True
@@ -298,11 +303,12 @@ def tdx_bundle(assets,
                     start_session=start_session, end_session=end,
                     freq=freq,
                 )
-                print("\r---" + str(e.id[0]) + "-----",  end='')
+                sym = "0:0>6".format(str(e.id[0]))
+                print("\r---" + sym + "-----",  end='')
                 if data.empty:
                     continue
                 data.to_sql(SESSION_BAR_TABLE, session_bars.connect(), if_exists='append', index_label='day')
-                dates_json[freq][str(e.id[0])] = data.index[-1].strftime('%Y%m%d')
+                dates_json[freq][sym] = data.index[-1].strftime('%Y%m%d')
                 yield int(e.id[0]), data
         with open(dates_path, 'w') as f:
             json.dump(dates_json, f)
@@ -339,13 +345,17 @@ def tdx_bundle(assets,
                 single_distance = calendar.session_distance(start, end)
                 if single_distance >= 100:
                     func = eg.get_k_data
+
+
             data = reindex_to_calendar(
                 calendar,
                 func(symbol, start, end, freq),
                 start_session=start, end_session=end,
                 freq=freq,
             )
+
             if freq == '1d' and symbol in dates_json[freq]:
+                # 在start和end的范围内，股票数据为空（停牌、退市）
                 if data is None or data.empty:
                     data = pd.read_sql(
                         "select * from {} where id = {} order by day ASC ".format(SESSION_BAR_TABLE, int(symbol)),
@@ -354,14 +364,20 @@ def tdx_bundle(assets,
 
                     if end.tz_localize(None) != data.index[-1]:
                         index = data.index[-1]
+                        # 对于停牌的数据，调用的reindex_to_calendar函数, 参数start=data.index[0]
                         data = reindex_to_calendar(
                             calendar,
                             data,
-                            start_session=start, end_session=end,
+                            start_session=data.index[0], end_session=end,
                             freq=freq,
                         )
                         data_to_write = data[data.index > index]
-                        data_to_write.to_sql(SESSION_BAR_TABLE, session_bars.connect(), if_exists='append', index_label='day')
+                        try:
+                            data_to_write.to_sql(SESSION_BAR_TABLE, session_bars.connect(), if_exists='append', index_label='day')
+                        except:
+                            print("maybe engine connection is lost and the data reterned is NaN")
+                            print(data_to_write)
+                            continue
                     yield int(symbol), data
                     continue
 
@@ -374,7 +390,11 @@ def tdx_bundle(assets,
                     else:
                         data["close"][0] = data2["close"][0]
                         fillna(data)
-                data.to_sql(SESSION_BAR_TABLE, session_bars.connect(), if_exists='append', index_label='day')
+                try:
+                    data.to_sql(SESSION_BAR_TABLE, session_bars.connect(), if_exists='append', index_label='day')
+                except sqlalchemy.exc.IntegrityError:
+                    print("data existed")
+                    print(data)
                 if symbol in dates_json[freq]:
                     data = pd.read_sql(
                         "select * from {} where id = {} order by day ASC ".format(SESSION_BAR_TABLE, int(symbol)),
@@ -387,6 +407,7 @@ def tdx_bundle(assets,
 
             with open(dates_path, 'w') as f:
                 json.dump(dates_json, f)
+
     assets = set([int(s) for s in symbols.symbol])
     is_daily_updated = True
     if first:
@@ -406,7 +427,6 @@ def tdx_bundle(assets,
     symbols= symbols[~symbols.symbol.isin(error_list)]
 
     if not is_daily_updated:
-        eg.connect()
         splits, dividends, shares = fetch_splits_and_dividends(eg, symbols, start_session, end_session)
         metas = pd.read_sql("select id as symbol,min(day) as start_date,max(day) as end_date from bars group by id;",
                             session_bars,
@@ -430,7 +450,6 @@ def tdx_bundle(assets,
 
 
     if ingest_minute:
-        aeg.connect()
         with click.progressbar(
                 gen_symbols_data(symbols.symbol, freq="1m"),
                 label="Merging minute equity files:",

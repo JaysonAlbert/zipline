@@ -7,6 +7,7 @@ import six
 
 def initialize(context):
     context.smb = symbol('002450')
+    print("start init....")
     print(context.portfolio)
     print(context.positions())
 
@@ -54,8 +55,10 @@ if __name__ == '__main__':
     else:
         client_uri = "tcp://127.0.0.1:4242"
 
-    shipane_client = ShipaneClient(client_key="1")
+    shipane_client = ShipaneClient(client_key="")
     broker = TdxShipaneBroker(client_uri, shipane_client)
+    os.environ['ZIPLINE_ROOT'] = "G:\\zipline"
+    print(os.environ.get("ZIPLINE_ROOT"))
     if not os.path.exists('tmp'):
         os.mkdir('tmp')
     realtime_bar_target = 'tmp/real-bar-{}'.format(str(pd.to_datetime('today').date()))
