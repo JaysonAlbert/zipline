@@ -230,7 +230,11 @@ def tdx_bundle(assets,
     eg.connect()
 
     # aeg = AsyncEngine(ip='202.108.253.131', auto_retry=True, raise_exception=True, heartbeat=True)
-    aeg = RQEngine(db_host="192.168.0.114", db_port=27016, ip='180.153.18.170', auto_retry=True, raise_exception=True)
+    # TODO: 测试是否存在mongo，不存在则默认使用tdx数据源
+    try:
+        aeg = RQEngine(db_host="192.168.0.114", db_port=27016, ip='180.153.18.170', auto_retry=True, raise_exception=True)
+    except:
+        aeg = AsyncEngine(ip='202.108.253.131', auto_retry=True, raise_exception=True, heartbeat=True)
 
     aeg.connect()
 
