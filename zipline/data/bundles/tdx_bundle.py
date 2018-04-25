@@ -234,6 +234,7 @@ def tdx_bundle(assets,
     try:
         aeg = RQEngine(db_host="192.168.0.114", db_port=27016, ip='180.153.18.170', auto_retry=True, raise_exception=True)
     except:
+        print("cannot connect to mongodb, use tdx engine as default.")
         aeg = AsyncEngine(ip='202.108.253.131', auto_retry=True, raise_exception=True, heartbeat=True)
 
     aeg.connect()
