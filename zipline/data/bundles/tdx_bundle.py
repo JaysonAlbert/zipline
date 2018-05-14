@@ -1,4 +1,4 @@
-from tdx.engine import Engine, AsyncEngine, RQEngine
+from tdx.engine import Engine, AsyncEngine, DBEngine
 import pandas as pd
 from collections import OrderedDict
 import numpy as np
@@ -215,6 +215,8 @@ def reindex_to_calendar(calendar, data, freq='1d', start_session=None, end_sessi
 def tdx_bundle(assets,
                ingest_minute,  # whether to ingest minute data, default False
                fundamental,  # whether to ingest fundamental data, default False
+               localdb_ip,
+               localdb_port,
                environ,
                asset_db_writer,
                minute_bar_writer,
@@ -226,17 +228,29 @@ def tdx_bundle(assets,
                end_session,
                cache,
                show_progress,
-               output_dir):
+               output_dir,
+               ):
+    first = True
+    dates_path = join(output_dir, DATE_DIR)
+    if os.path.isfile(dates_path):
+        first = False
+        with open(dates_path, 'r') as f:
+            dates_json = json.load(f)
+    else:
+        first = True
+        dates_json = {
+            '1d': {},
+            '1m': {}
+        }
+
     eg = Engine(heartbeat=True, auto_retry=True, multithread=True, best_ip=True, thread_num=1, raise_exception=True)
     eg.connect()
 
-    # aeg = AsyncEngine(ip='202.108.253.131', auto_retry=True, raise_exception=True, heartbeat=True)
-    # TODO: 测试是否存在mongo，不存在则默认使用tdx数据源
-    try:
-        aeg = RQEngine(db_host="192.168.0.14", db_port=27016, ip='180.153.18.170', auto_retry=True, raise_exception=True)
-        aeg = 1/0
-    except:
-        print("cannot connect to mongodb, use tdx engine as default.")
+    if first and localdb_ip:
+        aeg = DBEngine(db_host=localdb_ip, db_port=localdb_port, ip='180.153.18.170', auto_retry=True, raise_exception=True)
+        print("ingest from DBEngine...")
+    else:
+        print("cannot connect to database, use tdx engine as default.")
         aeg = AsyncEngine(ip='202.108.253.131', auto_retry=True, raise_exception=True, heartbeat=True)
 
     aeg.connect()
@@ -247,10 +261,8 @@ def tdx_bundle(assets,
     today = pd.to_datetime('today', utc=True)
     distance = calendar.session_distance(start_session, today)
 
-    dates_path = join(output_dir, DATE_DIR)
     session_bars = create_engine('sqlite:///' + join(output_dir, SESSION_BAR_DB)
                                  + '?check_same_thread=False')
-
     now = pd.to_datetime('now', utc=True)
     # 判断 end 的时间
     if end_session >= now.normalize():
@@ -266,18 +278,6 @@ def tdx_bundle(assets,
     # //TODO 这个end为了测试用
     # end = pd.to_datetime('20180228', utc=True)
     error_list = []
-
-    first = True
-    if os.path.isfile(dates_path):
-        first = False
-        with open(dates_path, 'r') as f:
-            dates_json = json.load(f)
-    else:
-        first = True
-        dates_json = {
-            '1d': {},
-            '1m': {}
-        }
 
     def gen_first_symbol_data():
         Base.metadata.create_all(session_bars.connect(), checkfirst=True,
@@ -460,7 +460,9 @@ def tdx_bundle(assets,
     eg.exit()
 
 
-def register_tdx(assets=None, minute=False, start=None, fundamental=False, end=None):
+def register_tdx(assets=None, minute=False, start=None,
+                 fundamental=False, end=None,
+                 localdb_ip="", localdb_port=27017):
     try:
         bundles.unregister('tdx')
     except bundles.UnknownBundle:
@@ -469,7 +471,7 @@ def register_tdx(assets=None, minute=False, start=None, fundamental=False, end=N
     if start:
         if not calendar.is_session(start):
             start = calendar.all_sessions[searchsorted(calendar.all_sessions, start)]
-    bundles.register('tdx', partial(tdx_bundle, assets, minute, fundamental), 'SHSZ', start, end,
+    bundles.register('tdx', partial(tdx_bundle, assets, minute, fundamental, localdb_ip, localdb_port), 'SHSZ', start, end,
                      minutes_per_day=240)
 
 

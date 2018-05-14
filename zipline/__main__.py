@@ -422,7 +422,19 @@ def zipline_magic(line, cell=None):
     default="bcolz",
     help='writer class name for bundle to write minute data'
 )
-def ingest(bundle, assets, minute, start, fundamental, assets_version, show_progress, writer):
+@click.option(
+    "--localdb_ip",
+    default="",
+    help="in the first ingest, you can ingest data from mongodb using a specific ip"
+)
+@click.option(
+    "--localdb_port",
+    default=27017,
+    help="specific mongodb port"
+)
+def ingest(bundle, assets, minute, start, fundamental,
+           assets_version, show_progress, writer,
+           localdb_ip, localdb_port):
     if bundle == 'tdx':
         if assets:
             if not os.path.exists(assets):
@@ -430,7 +442,7 @@ def ingest(bundle, assets, minute, start, fundamental, assets_version, show_prog
             df = pd.read_csv(assets, names=['symbol', 'name'], dtype=str, encoding='utf8')
             register_tdx(df,minute,start,fundamental)
         else:
-            register_tdx(None,minute,start,fundamental)
+            register_tdx(None,minute,start,fundamental, localdb_ip=localdb_ip, localdb_port=localdb_port)
 
     bundles_module.ingest(bundle,
                           os.environ,

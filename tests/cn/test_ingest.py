@@ -8,9 +8,13 @@ from functools import partial
 from zipline.data.bundles.tdx_bundle import register_tdx
 import pandas as pd
 import logbook
+import os
 
 
-def ingest(bundle, assets, minute, start=None, show_progress=True):
+def ingest(bundle, assets, minute, start=None, show_progress=True,
+           localdb_ip="",
+           localdb_port=27017
+           ):
     if bundle == 'tdx':
         if assets:
             if not os.path.exists(assets):
@@ -23,7 +27,7 @@ def ingest(bundle, assets, minute, start=None, show_progress=True):
                 'name': ['平安银行']
             })
             df = None
-            register_tdx(df, minute, start)
+            register_tdx(df, minute, start, localdb_ip=localdb_ip, localdb_port=localdb_port)
 
     bundles_module.ingest(bundle,
                           os.environ,
@@ -39,7 +43,10 @@ def test_target_ingest():
 
 # ingest('tdx', "ETF.csv", True, pd.to_datetime('20170101', utc=True), True)
 logbook.StderrHandler().push_application()
-ingest('tdx', "", True, show_progress=True)
+os.environ['ZIPLINE_ROOT'] = "G:\\zipline"
+print(os.environ.get("ZIPLINE_ROOT"))
+ingest('tdx', "", True, show_progress=True,
+       localdb_ip="192.168.0.114", localdb_port=27016)
 
 # if __name__ == '__main__':
 #     from tdx.engine import AsyncEngine
