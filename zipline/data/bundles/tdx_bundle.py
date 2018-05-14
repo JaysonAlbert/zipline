@@ -178,7 +178,7 @@ def get_meta_from_bars(df):
     ])
 
 
-def reindex_to_calendar(calendar, data, freq='1d', start_session=None, end_session=None):
+def reindex_to_calendar(calendar, data, freq='1d', start_session=None, end_session=None, first_ingest=False):
     if data.empty:
         return None
     if start_session is None:
@@ -191,8 +191,9 @@ def reindex_to_calendar(calendar, data, freq='1d', start_session=None, end_sessi
     start_session = start_session.normalize()
     end_session = end_session.normalize()
 
-    # start_session must >= data.index[0], 不然会去取到NAN数据
-    if start_session.tz_localize(None) < data.index[0]:
+    # 跑全量时, start_session must >= data.index[0], 不然会去取到NAN数据
+    # 跑增量时，股票之前停牌现在开盘，data.index[0]是可能大于start_session的
+    if first_ingest and start_session.tz_localize(None) < data.index[0]:
         start_session = data.index[0].normalize()
 
     if freq == '1d':
@@ -232,7 +233,8 @@ def tdx_bundle(assets,
     # aeg = AsyncEngine(ip='202.108.253.131', auto_retry=True, raise_exception=True, heartbeat=True)
     # TODO: 测试是否存在mongo，不存在则默认使用tdx数据源
     try:
-        aeg = RQEngine(db_host="192.168.0.114", db_port=27016, ip='180.153.18.170', auto_retry=True, raise_exception=True)
+        aeg = RQEngine(db_host="192.168.0.14", db_port=27016, ip='180.153.18.170', auto_retry=True, raise_exception=True)
+        aeg = 1/0
     except:
         print("cannot connect to mongodb, use tdx engine as default.")
         aeg = AsyncEngine(ip='202.108.253.131', auto_retry=True, raise_exception=True, heartbeat=True)
@@ -262,7 +264,7 @@ def tdx_bundle(assets,
         end = calendar.all_sessions[end_idx - 1]
 
     # //TODO 这个end为了测试用
-    end = pd.to_datetime('20180228', utc=True)
+    # end = pd.to_datetime('20180228', utc=True)
     error_list = []
 
     first = True
@@ -300,6 +302,7 @@ def tdx_bundle(assets,
                     e,
                     start_session=start_session, end_session=end,
                     freq=freq,
+                    first_ingest=True
                 )
                 print("\r---" + str(e.id[0]) + "-----",  end='')
                 if data.empty:
@@ -343,42 +346,56 @@ def tdx_bundle(assets,
                 start_session=start, end_session=end,
                 freq=freq,
             )
-            if freq == '1d' and symbol in dates_json[freq]:
-                if data is None or data.empty:
-                    data = pd.read_sql(
-                        "select * from {} where id = {} order by day ASC ".format(SESSION_BAR_TABLE, int(symbol)),
-                        session_bars, index_col='day')
-                    data.index = pd.to_datetime(data.index)
+            if freq == '1d':
+                if symbol not in dates_json[freq]:
+                    data = data[data.close.notnull()]
+                    data.to_sql(SESSION_BAR_TABLE, session_bars.connect(), if_exists='append', index_label='day')
+                else:
+                    # 股票在日期内没数据（完全停牌）
+                    if data is None or data.empty:
+                        data = pd.read_sql(
+                            "select * from {} where id = {} order by day ASC ".format(SESSION_BAR_TABLE, int(symbol)),
+                            session_bars, index_col='day')
+                        data.index = pd.to_datetime(data.index)
 
-                    if end.tz_localize(None) != data.index[-1]:
-                        index = data.index[-1]
-                        data = reindex_to_calendar(
-                            calendar,
-                            data,
-                            start_session=start, end_session=end,
-                            freq=freq,
-                        )
-                        data_to_write = data[data.index > index]
-                        data_to_write.to_sql(SESSION_BAR_TABLE, session_bars.connect(), if_exists='append', index_label='day')
-                    yield int(symbol), data
-                    continue
-
-                if data.close.isnull()[0]:  # padding fill error if the first is NaN
-                    data2 = pd.read_sql(
-                        "select * from {} where id = {} order by day desc limit 1 ".format(SESSION_BAR_TABLE, int(symbol)),
-                        session_bars, index_col='day')
-                    if data2.empty:
-                        data = data[data.close.notnull()]
-                    else:
-                        data["close"][0] = data2["close"][0]
-                        fillna(data)
-                data.to_sql(SESSION_BAR_TABLE, session_bars.connect(), if_exists='append', index_label='day')
-                if symbol in dates_json[freq]:
-                    data = pd.read_sql(
-                        "select * from {} where id = {} order by day ASC ".format(SESSION_BAR_TABLE, int(symbol)),
-                        session_bars, index_col='day')
-                    data.index = pd.to_datetime(data.index)
+                        if end.tz_localize(None) != data.index[-1]:
+                            index = data.index[-1]
+                            # start-sesion 必须是data.index[0], 传start会增量时start-end都是停牌时出错
+                            data = reindex_to_calendar(
+                                calendar,
+                                data,
+                                start_session=data.index[0], end_session=end,
+                                freq=freq,
+                            )
+                            fillna(data)
+                            data_to_write = data[data.index > index]
+                            data_to_write.to_sql(SESSION_BAR_TABLE, session_bars.connect(), if_exists='append', index_label='day')
+                        if not data.close.isnull().all():
+                            dates_json[freq][symbol] = data.index[-1].strftime('%Y%m%d')
+                        else:
+                            logger.warning("symbol %s's data is NAN, no write sql and dates.json" % (symbol))
+                        yield int(symbol), data
+                        continue
+                    # 股票在日期内部分停牌（开头前几天停，在end之前复牌）
+                    if data.close.isnull()[0]:  # padding fill error if the first is NaN
+                        data2 = pd.read_sql(
+                            "select * from {} where id = {} order by day desc limit 1 ".format(SESSION_BAR_TABLE, int(symbol)),
+                            session_bars, index_col='day')
+                        if data2.empty:
+                            data = data[data.close.notnull()]
+                        else:
+                            data["close"][0] = data2["close"][0]
+                            fillna(data)
+                    data.to_sql(SESSION_BAR_TABLE, session_bars.connect(), if_exists='append', index_label='day')
+                    if symbol in dates_json[freq]:
+                        data = pd.read_sql(
+                            "select * from {} where id = {} order by day ASC ".format(SESSION_BAR_TABLE, int(symbol)),
+                            session_bars, index_col='day')
+                        data.index = pd.to_datetime(data.index)
             if freq == '1m' and data is None:
+                continue
+            if data.close.isnull().all():
+                logger.warning("symbol %s's data is NAN, no write sql and dates.json" % (symbol))
                 continue
             dates_json[freq][symbol] = data.index[-1].strftime('%Y%m%d')
             yield int(symbol), data
@@ -403,6 +420,24 @@ def tdx_bundle(assets,
 
     symbols= symbols[~symbols.symbol.isin(error_list)]
 
+
+    if fundamental:
+        logger.info("writing fundamental data:")
+        fundamental_writer.write(start_session, end_session)
+
+
+    if ingest_minute:
+        with click.progressbar(
+                gen_symbols_data(symbols.symbol, freq="1m"),
+                label="Merging minute equity files:",
+                length=len(assets),
+                item_show_func=lambda e: e if e is None else str(e[0]),
+        ) as bar:
+            minute_bar_writer.write(bar, show_progress=False)
+
+    if len(error_list) != 0:
+        print(error_list)
+
     splits, dividends, shares = fetch_splits_and_dividends(eg, symbols, start_session, end_session)
     metas = pd.read_sql("select id as symbol,min(day) as start_date,max(day) as end_date from bars group by id;",
                         session_bars,
@@ -421,22 +456,6 @@ def tdx_bundle(assets,
         shares=shares
     )
 
-    if fundamental:
-        logger.info("writing fundamental data:")
-        fundamental_writer.write(start_session, end_session)
-
-
-    if ingest_minute:
-        with click.progressbar(
-                gen_symbols_data(symbols.symbol, freq="1m"),
-                label="Merging minute equity files:",
-                length=len(assets),
-                item_show_func=lambda e: e if e is None else str(e[0]),
-        ) as bar:
-            minute_bar_writer.write(bar, show_progress=False)
-
-    if len(error_list) != 0:
-        print(error_list)
     aeg.exit()
     eg.exit()
 

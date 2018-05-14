@@ -733,6 +733,7 @@ class TradingAlgorithm(object):
         # Each iteration returns a perf dictionary
         try:
             perfs = []
+
             for perf in self.get_generator():
                 perfs.append(perf)
 

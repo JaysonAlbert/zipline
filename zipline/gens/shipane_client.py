@@ -18,6 +18,11 @@ from six import PY2
 if not PY2:
     unicode = str  # 兼容python3 rpc 请求 python2的string
 
+if __name__ == '__main__':
+    from type import *
+else:
+    from .type import *
+
 class TradeConstants(object):
     class SoftwareConstants(object):
         SOFTWARE_TDX_ID = 1
@@ -138,6 +143,8 @@ class ShipaneClient(Client):
         self.port = port
         self.client_sign = client_sign
         self.client_key = client_key
+        # self.shipane_client = client.Client(key=self.client_key, client=self.client_sign)
+
 
     def _create_client(self):
         shipane_client = client.Client(key=self.client_key, client=self.client_sign)
@@ -366,9 +373,44 @@ class ShipaneClient(Client):
         jso = spy_client.get_account(client=client)
         return jso
 
+    def _transactions(self, start_date, end_date):
+        spy_client = self._create_client()
+        today = pd.to_datetime('today')
+        today_str = today.strftime('%Y%m%d')
+
+        rt = {}
+
+        today_trans = True if today_str == start_date and today_str == end_date else False
+        if today_trans:
+            df = spy_client.get_orders(status="filled")
+        else:
+            # 实盘易没有查询历史成交的接口
+            return {}
+
+        for index in df.index:
+            row = df.ix[index]
+            id = row['成交编号']
+            sign = -1 if row['操作'] == '卖出' else 1
+            commission = float(row["成交金额"]) * 0.0012
+            dt = unicode(today.date()) + " " + row["成交时间"]
+            rt[id] = Transaction(
+                id=id,
+                asset=unicode(row["证券代码"]),
+                amount=sign * float(row["成交数量"]),
+                dt=dt,
+                price=float(row["成交均价"]),
+                order_id=row["合同编号"],
+                # 佣金
+                commission=commission
+            )
+        return rt
+
+    def get_transcations(self):
+        start_date = end_date = pd.to_datetime('today').strftime('%Y%m%d')
+        return self._transactions(start_date, end_date)
 
 if __name__ == "__main__":
-    trade = ShipaneClient(client_key="1")
+    trade = ShipaneClient(client_key="")
     import jsonpickle
     print(jsonpickle.dumps(trade.get_client_info()))
     print(jsonpickle.dumps(trade.portfolio()))
@@ -382,4 +424,5 @@ if __name__ == "__main__":
     print(jsonpickle.dumps(trade.get_orders(TradeConstants.TradeStatusConstants.UN_FINISH)))
     print(jsonpickle.dumps(trade.cancel()))
     print(jsonpickle.dumps(trade.get_client_info()))
-    print(jsonpickle.dumps(trade.get_client_info(client="account:48731334")))
+    print(jsonpickle.dumps(trade.get_client_info(client="account:44363925")))
+    print(trade.get_transcations())

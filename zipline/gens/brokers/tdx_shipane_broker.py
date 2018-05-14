@@ -210,7 +210,16 @@ class TdxShipaneBroker(TdxBroker):
     def transactions(self):
         # TODO: do we need the tx record now?
         # t = self._client.transactions()
+        t = self._shipane_client.get_transcations()
         rt = {}
+        for exec_id, transaction in t.items():
+            try:
+                if isinstance(transaction, list):
+                    transaction = TdxTransaction(*transaction)
+                rt[exec_id] = self._tdx_transaction_to_zipline(transaction)
+            except SymbolNotFound as e:
+                log.warning(e.message)
+
         return rt
 
     def cancel_order(self, order_id):

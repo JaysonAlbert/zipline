@@ -235,12 +235,14 @@ class TdxClient(object):
                 commission = row["佣金"] + row["过户费"] + row["印花税"] + row["经手费"] + row["证管费"]
                 dt = unicode(datetime.datetime.strptime(unicode(row["成交日期"]), "%Y%m%d").date()) + " " + unicode(row["成交时间"]),
             rt[id] = Transaction(
+                # 成交编号
                 id=id,
                 asset=unicode(row["证券代码"]),
                 amount=sign * row["成交数量"],
                 dt=dt,
                 price=row["成交价格"],
                 order_id=row["委托编号"],
+                # 佣金
                 commission=commission
             )
         return rt
