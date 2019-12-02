@@ -104,8 +104,3 @@ ETF基金数据，一方面可以节省时间达到快速测试的目的。
 如有任何问题，欢迎大家提交
 [issue](https://github.com/JaysonAlbert/zipline/issues/new/)
 ，反馈bug，以及提出改进建议。
-
-其它
-----
-
-对量化感兴趣的朋友，以及想更方便的交流朋友，请加QQ群434588628
